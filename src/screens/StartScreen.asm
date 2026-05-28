@@ -10,7 +10,7 @@ START_SCREEN:
     ; y establecer los atributos de color por defecto.
     CALL COMMON_INIT_SCREEN    
 
-    ; --- 2. Dibujar Título "Bienvenido al Conecta 4" ---
+    ; --- 2. Dibujar Título "Bienvenido al Conecta 3" ---
     LD A, COLOR_AMARILLO_NEGRO  ; Atributo: Amarillo brillante sobre negro
     LD B, 1                     ; Fila (Y) = 1
     LD C, 5                     ; Columna (X) = 5

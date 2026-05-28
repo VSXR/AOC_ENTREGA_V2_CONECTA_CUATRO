@@ -1,6 +1,6 @@
 ; ============================================================================================
 ; ARCHIVO: ConnectFour.asm
-; USO: Archivo principal y punto de entrada (entry point) del juego "Conecta 4".
+; USO: Archivo principal y punto de entrada (entry point) del juego "Conecta 3".
 ;      Define la configuración del ensamblador Z80, inicializa la CPU,
 ;      la pila (stack) y transfiere el control a la pantalla de inicio.
 ; ============================================================================================

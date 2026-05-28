@@ -1,8 +1,11 @@
 ; ============================================================================================
 ; ARCHIVO: input.asm
-; USO: Lógica principal del juego.
-;      Gestiona la inicialización, el movimiento de la ficha del jugador,
-;      la animación de caída y la lógica de turnos, victorias y empates.
+; USO: Lógica principal del juego (Conecta 3 - Convocatoria Extraordinaria).
+;      Gestiona la inicialización, el movimiento vertical de la ficha del jugador,
+;      la animación de deslizamiento horizontal y la lógica de turnos, victorias y empates.
+;
+;      Mecánica: El jugador selecciona una FILA (movimiento vertical).
+;                Al confirmar, la ficha desliza de izquierda a derecha hasta chocar.
 ; ============================================================================================
 
 ; ============================================================================================
@@ -11,24 +14,25 @@
 ; --------------------------------------------------------------------------------------------
 ; INPUT_Inicializar_Teclado
 ; Prepara las variables de estado para una nueva partida.
-; Se llama desde GAME_SCREEN.
+; Se llama desde GAME_SCREEN antes del bucle principal de teclado.
+;
+; Entrada:  -
+; Salida:   Variables de estado limpias, preview de P1 dibujada en fila 0
+; Modifica: AF, BC, DE, HL (preservados con PUSH/POP)
 ; --------------------------------------------------------------------------------------------
 INPUT_Inicializar_Teclado:
     PUSH AF: PUSH BC: PUSH DE: PUSH HL
-    
-    ; Poner a 0 las variables de estado
-    XOR A
-    LD (TOTAL_FICHAS_PUESTAS), A    ; Reiniciar contador de fichas (0 de 42)
-    LD (CURRENT_COLUMN), A          ; Poner la ficha flotante en la columna 0
-    LD (GAME_OVER_REASON), A        ; Borrar la razón del fin de juego (0 = En curso)
 
-    ; Establecemos al Jugador 1 como el primero en jugar (osea, la ficha roja)
+    XOR A
+    LD (TOTAL_FICHAS_PUESTAS), A    ; Reiniciar contador de fichas
+    LD (CURRENT_ROW), A             ; Ficha flotante empieza en fila 0
+    LD (GAME_OVER_REASON), A        ; 0 = en curso
+
     LD A, PLAYER_1
     LD (GUARDAR_JUGADOR_ACTUAL), A
-    
-    ; Dibujamos la primera ficha del jugador en la pantalla
-    CALL DIBUJAR_FICHA_JUGADOR
-    
+
+    CALL DIBUJAR_FICHA_JUGADOR      ; Dibujar preview de P1
+
     POP HL: POP DE: POP BC: POP AF
     RET
 
@@ -37,85 +41,66 @@ INPUT_Inicializar_Teclado:
 ; ============================================================================================
 ; --------------------------------------------------------------------------------------------
 ; DIBUJAR_FICHA_JUGADOR
-; Dibuja la ficha flotante del jugador en la parte superior de la pantalla.
-; Lee la columna actual (CURRENT_COLUMN) y el jugador actual (GUARDAR_JUGADOR_ACTUAL).
+; Dibuja la ficha de preview del jugador activo en el lado IZQUIERDO del tablero,
+; a la altura de la fila seleccionada (CURRENT_ROW).
+;
+; Entrada:  (CURRENT_ROW)            - fila seleccionada (0-5)
+;           (GUARDAR_JUGADOR_ACTUAL) - jugador activo (1, 2 o 3)
+; Salida:   Ficha de 16×16 dibujada en (Y = ROW*3+4,  X = 2)
+; Modifica: AF, BC, DE, HL (preservados)
 ; --------------------------------------------------------------------------------------------
 DIBUJAR_FICHA_JUGADOR:
     PUSH AF: PUSH BC: PUSH DE: PUSH HL
 
-    ; --- Calcular Coordenada X (Columna) ---
-    ; OJO: Acordarse de que la lógica debe coincidir con la cuadrícula del tablero para que
-    ; la ficha quede centrada en la columna correcta!!
-    LD A, (CURRENT_COLUMN)
-    SLA A                       ; A = Columna * 2
-    SLA A                       ; A = Columna * 4
-    ADD A, 4                    ; Offset X del tablero = 4
-    LD L, A                     ; L = Coordenada X final
+    ; Y = CURRENT_ROW * 3 + 4
+    LD A, (CURRENT_ROW)
+    LD C, A
+    ADD A, A              ; A = ROW * 2
+    ADD A, C              ; A = ROW * 3
+    ADD A, 4              ; A = ROW * 3 + 4
+    LD H, A               ; H = coordenada Y
 
-    ; --- Calcular Coordenada Y (Fila) ---
-    LD H, 1                     ; Fila Y fija (arriba del tablero)
-    
-    ; --- Determinar Color ---
+    LD L, 0               ; L = X fijo (fuera del tablero: board empieza en L=3)
+
+    ; Color: lookup en tabla PLAYER_COLORS (índice = jugador - 1)
     LD A, (GUARDAR_JUGADOR_ACTUAL)
-    CP PLAYER_1
-    JR Z, .SET_COLOR_P1
-    
-    ; Si no es P1, es P2 (Amarillo)
-    LD A, COLOR_INK_AMARILLO
-    JR .DRAW_NOW
-.SET_COLOR_P1:
-    LD A, COLOR_INK_ROJO        ; P1 es Rojo (Jugador 1)
+    DEC A                 ; 1->0, 2->1, 3->2
+    PUSH HL               ; preservar (Y, X)
+    LD C, A
+    LD B, 0
+    LD HL, PLAYER_COLORS
+    ADD HL, BC
+    LD A, (HL)            ; A = atributo del jugador actual
+    POP HL                ; restaurar (H=Y, L=X)
 
-.DRAW_NOW:
-    ; Pintar la ficha de 16x16
-    CALL FICHAS_PintarFicha_AjustadaTablero ; (Usamos esta para asegurar consistencia de matriz)
+    CALL FICHAS_PintarFicha_AjustadaTablero
+
     POP HL: POP DE: POP BC: POP AF
     RET
 
 ; --------------------------------------------------------------------------------------------
 ; ERASE_PREVIEW
-; Borra la ficha del jugador en la parte superior de la pantalla.
-; Es la operación inversa a DIBUJAR_FICHA_JUGADOR.
+; Borra la ficha de preview del lado izquierdo del tablero.
+; Las coordenadas son IDÉNTICAS a las de DIBUJAR_FICHA_JUGADOR.
+;
+; Entrada:  (CURRENT_ROW) - fila que se va a borrar
+; Salida:   Ficha de 16×16 borrada (píxeles y atributo a 0)
+; Modifica: AF, BC, DE, HL (preservados)
 ; --------------------------------------------------------------------------------------------
 ERASE_PREVIEW:
     PUSH AF: PUSH BC: PUSH DE: PUSH HL
 
-    ; --- Calcular Coordenada X (Debe ser IDÉNTICA a DIBUJAR_FICHA_JUGADOR) ---
-    LD A, (CURRENT_COLUMN)
-    SLA A
-    SLA A
+    LD A, (CURRENT_ROW)
+    LD C, A
+    ADD A, A
+    ADD A, C
     ADD A, 4
-    LD L, A
-    LD H, 1                     ; Fila Y fija
+    LD H, A               ; H = Y = ROW * 3 + 4
+    LD L, 0               ; L = X = 0 (fijo, fuera del tablero azul)
 
-    ; --- Borrar con Píxeles Vacíos ---
-    XOR A                                   ; Atributo 0 (Negro/Negro/Transparente)
-    LD IX, MATRIZ_CIRCULO_PERMUTACIONES     ; Carga la matriz 8x8 vacía (todo 0s)
-    
-    ; Pinta los 4 cuadrantes vacíos, borrando la ficha de 16x16
-    CALL FICHAS_PintarMatriz8x8
-    INC L
-    CALL FICHAS_PintarMatriz8x8
-    INC H
-    CALL FICHAS_PintarMatriz8x8
-    DEC L
-    CALL FICHAS_PintarMatriz8x8
+    XOR A
+    LD IX, MATRIZ_CIRCULO_PERMUTACIONES
 
-    POP HL: POP DE: POP BC: POP AF
-    RET
-
-; --------------------------------------------------------------------------------------------
-; ERASE_FICHA_16x16
-; Rutina genérica para borrar una ficha en CUALQUIER coordenada (H, L).
-; NOTA: La animación de caída ya NO usa esta rutina, pero se mantiene como utilidad.
-; --------------------------------------------------------------------------------------------
-ERASE_FICHA_16x16:
-    PUSH AF: PUSH HL: PUSH IX
-
-    XOR A                               ; Atributo 0 (Negro/Transparente)
-    LD IX, MATRIZ_CIRCULO_PERMUTACIONES ; Matriz 8x8 vacía
-
-    ; Pintar los 4 cuadrantes con la matriz vacía
     CALL FICHAS_PintarMatriz8x8     ; Arriba-Izquierda
     INC L
     CALL FICHAS_PintarMatriz8x8     ; Arriba-Derecha
@@ -123,6 +108,32 @@ ERASE_FICHA_16x16:
     CALL FICHAS_PintarMatriz8x8     ; Abajo-Derecha
     DEC L
     CALL FICHAS_PintarMatriz8x8     ; Abajo-Izquierda
+
+    POP HL: POP DE: POP BC: POP AF
+    RET
+
+; --------------------------------------------------------------------------------------------
+; ERASE_FICHA_16x16
+; Rutina genérica para borrar una ficha de 16×16 en cualquier coordenada (H, L).
+; Mantenida como utilidad para uso externo.
+;
+; Entrada:  H = fila char, L = columna char
+; Salida:   Ficha de 16×16 borrada
+; Modifica: AF, HL, IX (preservados)
+; --------------------------------------------------------------------------------------------
+ERASE_FICHA_16x16:
+    PUSH AF: PUSH HL: PUSH IX
+
+    XOR A
+    LD IX, MATRIZ_CIRCULO_PERMUTACIONES
+
+    CALL FICHAS_PintarMatriz8x8
+    INC L
+    CALL FICHAS_PintarMatriz8x8
+    INC H
+    CALL FICHAS_PintarMatriz8x8
+    DEC L
+    CALL FICHAS_PintarMatriz8x8
 
     POP IX: POP HL: POP AF
     RET
@@ -132,168 +143,179 @@ ERASE_FICHA_16x16:
 ; ============================================================================================
 ; --------------------------------------------------------------------------------------------
 ; COLOCAR_FICHA_EN_TABLERO
-; Se llama al pulsar ENTER. Gestiona toda la lógica de un turno:
-; 1. Encuentra la celda vacía más baja en la columna seleccionada.
-; 2. Si la columna está llena, retorna sin hacer nada.
-; 3. Guarda la posición (fila, col) y actualiza el tablero lógico (BOARD_ARRAY).
-; 4. Lanza la animación de caída.
-; 5. Comprueba si hay victoria o empate.
-; 6. Si el juego sigue, cambia de jugador.
+; Se llama al pulsar CONFIRM. Gestiona toda la lógica de un turno:
+;   1. Busca la columna vacía más a la DERECHA en CURRENT_ROW (gravedad horizontal).
+;   2. Si la fila está llena, muestra aviso visual y retorna sin hacer nada.
+;   3. Guarda (LAST_ROW, LAST_COL) y actualiza BOARD_ARRAY.
+;   4. Anima el deslizamiento izquierda -> derecha (X += 4 por columna).
+;   5. Comprueba victoria (CHECK_WIN) o empate (42 fichas).
+;   6. Avanza jugador: 1 -> 2 -> 3 -> 1.
+;
+; Entrada:  (CURRENT_ROW), (GUARDAR_JUGADOR_ACTUAL)
+; Salida:   Estado actualizado. JP a GAME_End si fin de partida, RET si continúa.
+; Modifica: AF, BC, DE, HL (preservados)
+; Carry:    Solo uso interno (vía CHECK_WIN)
 ; --------------------------------------------------------------------------------------------
 COLOCAR_FICHA_EN_TABLERO:
     PUSH AF: PUSH BC: PUSH DE: PUSH HL
 
-    ; --- 1. BUSCAR CELDA VACÍA (DE ABAJO HACIA ARRIBA) ---
-    LD B, BOARD_ROWS - 1        ; B = 5 (Fila lógica inferior)
+    ; ======================================================
+    ; 1. BUSCAR COLUMNA VACÍA (EMPEZANDO POR LA DERECHA)
+    ; ======================================================
+    ; La fila buscada es CURRENT_ROW (fija). Iteramos columnas 6 -> 0.
+    ; Dirección de celda: BOARD_ARRAY + (CURRENT_ROW * 7) + columna
 
-.BUSCAR_FILA_LIBRE_LOOP:
-    ; Calcular dirección de memoria de (Fila B, Columna C)
-    LD A, B                     ; A = Fila (B)
-    LD D, A
-    SLA A: SLA A: SLA A         ; A = B * 8
-    SUB D                       ; A = B * 7 (A = B*8 - B)
-    LD D, A                     ; D = Offset de Fila
-    LD A, (CURRENT_COLUMN)      ; A = Columna
-    ADD A, D                    ; A = (Fila * 7) + Columna
+    LD B, BOARD_COLS - 1  ; B = 6 (columna más a la derecha = "fondo" horizontal)
+
+.BUSCAR_COLUMNA_LIBRE_LOOP:
+    ; Calcular índice en cada iteración (CURRENT_ROW puede leerse desde memoria)
+    LD A, (CURRENT_ROW)
+    LD C, A
+    SLA A: SLA A: SLA A   ; A = ROW * 8
+    SUB C                  ; A = ROW * 7
+    ADD A, B               ; A = (ROW * 7) + columna_actual
     LD E, A
     LD D, 0
     LD HL, BOARD_ARRAY
-    ADD HL, DE                  ; HL = Dirección de la celda en BOARD_ARRAY
-    
-    ; Comprobar si la celda está vacía
-    LD A, (HL)                  ; A = Valor de la celda (0, 1 o 2)
-    OR A                        ; Comprobar si A es 0
-    JR Z, .CELDA_ENCONTRADA     ; Si es 0, hemos encontrado la celda
-    
-    ; Si no está vacía, comprobar la celda de arriba
+    ADD HL, DE             ; HL -> BOARD_ARRAY[ROW][B]
+
+    LD A, (HL)
+    OR A                   ; ¿Vacía?
+    JR Z, .CELDA_ENCONTRADA
+
     DEC B
-    JP P, .BUSCAR_FILA_LIBRE_LOOP ; Si B >= 0 (Positivo), seguir buscando
-    
-    ; Si el bucle termina (B<0), la columna estaba llena.
-    CALL UTIL_VISUAL_ERROR_FULL_COLUMN
+    JP P, .BUSCAR_COLUMNA_LIBRE_LOOP  ; Si B >= 0, seguir
+
+    ; Fila llena: aviso y retornar
+    CALL UTIL_VISUAL_ERROR_FULL_ROW
     POP HL: POP DE: POP BC: POP AF
-    RET                         ; Retornar sin hacer nada
+    RET
 
 .CELDA_ENCONTRADA:
-    ; --- 2. ACTUALIZAR ESTADO DEL JUEGO ---
-    
-    ; Guardar la posición de la jugada para la comprobación de victoria
+    ; ======================================================
+    ; 2. ACTUALIZAR ESTADO
+    ; ======================================================
+    ; B = columna encontrada (0-6), HL = dirección de la celda
+    LD A, (CURRENT_ROW)
+    LD (LAST_ROW), A      ; Guardar fila de la jugada
     LD A, B
-    LD (LAST_ROW), A            ; Guardamos Fila (0-5)
-    LD A, (CURRENT_COLUMN)
-    LD (LAST_COL), A            ; Guardamos Columna (0-6)
+    LD (LAST_COL), A      ; Guardar columna de la jugada
 
-    ; Escribir el jugador (1 o 2) en el tablero lógico
     LD A, (GUARDAR_JUGADOR_ACTUAL)
-    LD (HL), A
+    LD (HL), A            ; Escribir jugador en BOARD_ARRAY
 
-    ; Preparar el color de la ficha para la animación (con fondo azul)
-    CP PLAYER_1
-    JR Z, .COLOR_P1_FINAL
-    LD A, COLOR_INK_AMARILLO + COLOR_PAPER_AZUL
-    JR .CALC_COORDS_FINAL
-.COLOR_P1_FINAL:
-    LD A, COLOR_INK_ROJO + COLOR_PAPER_AZUL
-
-.CALC_COORDS_FINAL:
-    ; --- 3. INICIA LÓGICA DE ANIMACIÓN DE CAÍDA DE LA FICHA DE LOS JUGADORES (HUECO A HUECO) ---
-    ; 3.1. Guardar Color (A) y Calcular Columna Final de pantalla (L)
-    PUSH AF                     ; Guardamos el color (ej: ROJO + AZUL)
-    
-    LD A, (CURRENT_COLUMN)
-    SLA A
-    SLA A
-    ADD A, 4                    ; Offset X del tablero
-    LD L, A                     ; L = Coordenada X (se mantendrá constante)
-    
-    ; 3.2. Calcular Fila Final de pantalla (D = H_final)
-    LD A, B                     ; B = Fila lógica (0-5) donde cayó
+    ; ======================================================
+    ; 3. ANIMACIÓN DE DESLIZAMIENTO (IZQ -> DER)
+    ; ======================================================
+    ; 3.1. Obtener color del jugador sobre fondo azul (para pintar sobre tablero)
+    ;      Lookup en PLAYER_COLORS_BOARD, índice = jugador - 1
+    LD A, (GUARDAR_JUGADOR_ACTUAL)
+    DEC A
     LD C, A
-    ADD A, A                    ; A = B*2
-    ADD A, C                    ; A = B*3
-    ADD A, 4                    ; Offset Y del tablero (Fila lógica 0 empieza en Y=4)
-    LD D, A                     ; D = Coordenada Y final
+    LD B, 0
+    LD HL, PLAYER_COLORS_BOARD
+    ADD HL, BC
+    LD A, (HL)            ; A = color sobre tablero azul
 
-    ; 3.3. Bucle de Animación
-    LD E, 4                     ; E = Coordenada Y actual, empieza en Y=4 (1a fila lógica)
+    PUSH AF               ; Guardar color para el bucle
+
+    ; 3.2. Y fija = CURRENT_ROW * 3 + 4
+    LD A, (CURRENT_ROW)
+    LD C, A
+    ADD A, A
+    ADD A, C
+    ADD A, 4
+    LD H, A               ; H = Y (fija durante toda la animación)
+
+    ; 3.3. X_final = LAST_COL * 4 + 4
+    LD A, (LAST_COL)
+    SLA A
+    SLA A                 ; A = COL * 4
+    ADD A, 4
+    LD D, A               ; D = X_final
+
+    LD E, 4               ; E = X_actual, empieza en la columna 0 del tablero (X=4)
 
 .ANIMATION_LOOP:
-    ; --- A. Dibujar (Ficha del Jugador) ---
-    LD H, E                     ; H = Fila Actual
-    POP AF                      ; Recupera el Color
-    PUSH AF                     ; Guárdalo de nuevo para el próximo bucle
-    CALL FICHAS_PintarFicha_AjustadaTablero ; Dibuja la ficha
+    ; A. Dibujar ficha en (H=Y, L=X_actual)
+    LD L, E
+    POP AF
+    PUSH AF
+    CALL FICHAS_PintarFicha_AjustadaTablero
 
-    ; --- B. Pausa (Controla la velocidad de caída) ---
-    LD BC, DROP_ANIM_DELAY      ; Carga el delay (su delay en constants.asm es de 5500ms / FPS)
+    ; B. Pausa
+    LD BC, DROP_ANIM_DELAY
     CALL UTIL_Pausar
 
-    ; --- C. Comprobar si es la última fila ---
+    ; C. ¿Llegamos al destino?
     LD A, E
-    CP D                        ; ¿Es Fila Actual (E) == Fila Final (D)?
-    JR Z, .SKIP_ERASE_AND_FINISH ; Si SÍ, saltar (dejar la ficha dibujada)
+    CP D
+    JR Z, .SKIP_ERASE_AND_FINISH
 
-    ; --- D. Borrar (Redibujar el HUECO NEGRO) ---
-    ; (Solo se ejecuta si NO es la última fila)
-    LD H, E                                     ; H = Fila Actual (L ya está cargado)
-    LD A, COLOR_INK_NEGRO + COLOR_PAPER_AZUL    ; Color del hueco
-    CALL FICHAS_PintarFicha_AjustadaTablero     ; Redibuja el hueco negro del tablero donde iran fichas que aun no se han colocado
+    ; D. Borrar (redibujar hueco negro) y avanzar
+    LD L, E
+    LD A, COLOR_INK_NEGRO + COLOR_PAPER_AZUL
+    CALL FICHAS_PintarFicha_AjustadaTablero
 
-    ; --- E. Incrementar y Repetir ---
     LD A, E
-    ADD A, 3                    ; Salta 3 filas de pantalla (1 fila lógica)
-    LD E, A                     
-    JR .ANIMATION_LOOP          ; Repetir
+    ADD A, 4              ; Siguiente columna lógica (+4 chars)
+    LD E, A
+    JR .ANIMATION_LOOP
 
 .SKIP_ERASE_AND_FINISH:
-    ; La ficha final ya está dibujada, solo limpiamos el color del stack
-    POP AF
-    ; --- FIN LÓGICA DE ANIMACIÓN ---
+    POP AF                ; Limpiar color del stack
 
     ; ======================================================
     ; 4. VERIFICAR VICTORIA
     ; ======================================================
-    CALL CHECK_WIN                  ; Llama a logic.asm
-    JR C, .FIN_POR_VICTORIA         ; Si Carry=1 (victoria), saltar
+    CALL CHECK_WIN
+    JR C, .FIN_POR_VICTORIA
 
     ; ======================================================
     ; 5. VERIFICAR EMPATE
     ; ======================================================
     LD HL, TOTAL_FICHAS_PUESTAS
-    INC (HL)                        ; Incrementar contador de fichas
+    INC (HL)
     LD A, (HL)
-    CP 42                           ; ¿Hemos puesto 42 fichas?
-    JR Z, .FIN_POR_EMPATE           ; Si sí, es empate
+    CP 42
+    JR Z, .FIN_POR_EMPATE
 
     ; ======================================================
-    ; 6. CAMBIAR DE JUGADOR (SI NO HAY VICTORIA NI EMPATE)
+    ; 6. CAMBIAR DE JUGADOR: 1 -> 2 -> 3 -> 1
     ; ======================================================
     LD A, (GUARDAR_JUGADOR_ACTUAL)
-    XOR 3                           ; OJO: Acordarse de truco para alternar jugadores: 1^3 = 2, 2^3 = 1
+    INC A
+    CP PLAYER_3 + 1       ; ¿Llegó a 4?
+    JR NZ, .NO_WRAP
+    LD A, PLAYER_1        ; Volver al jugador 1
+.NO_WRAP:
     LD (GUARDAR_JUGADOR_ACTUAL), A
-    POP HL: POP DE: POP BC: POP AF
-    RET                             ; Volver al bucle de teclado
 
-; --- RUTINAS DE FIN DE JUEGO ---
-.FIN_POR_VICTORIA:
-    LD A, (GUARDAR_JUGADOR_ACTUAL)  ; Carga al jugador ganador (1 o 2)
-    LD (GAME_OVER_REASON), A        ; Guardar como la razón del fin
     POP HL: POP DE: POP BC: POP AF
-    JP GAME_End                     ; Saltar a la limpieza final
+    RET
+
+.FIN_POR_VICTORIA:
+    LD A, (GUARDAR_JUGADOR_ACTUAL)
+    LD (GAME_OVER_REASON), A
+    POP HL: POP DE: POP BC: POP AF
+    JP GAME_End
 
 .FIN_POR_EMPATE:
-    XOR A                           ; A = 0 (Código para Empate)
-    LD (GAME_OVER_REASON), A        ; Guardar como la razón del fin
+    XOR A
+    LD (GAME_OVER_REASON), A
     POP HL: POP DE: POP BC: POP AF
-    JP GAME_End                     ; Saltar a la limpieza final
+    JP GAME_End
 
 ; ============================================================================================
 ; 4. FINALIZACIÓN
 ; ============================================================================================
 ; --------------------------------------------------------------------------------------------
 ; GAME_End
-; Limpieza visual antes de saltar a la pantalla de resultados (END_SCREEN).
+; Limpieza visual antes de saltar a la pantalla de resultados.
+;
+; Entrada:  -
+; Salida:   JP a END_SCREEN (no retorna)
 ; --------------------------------------------------------------------------------------------
 GAME_End:
-    CALL ERASE_PREVIEW              ; Borrar la ficha flotante
-    JP END_SCREEN                   ; Saltar a la pantalla de "Fin de Juego"
+    CALL ERASE_PREVIEW
+    JP END_SCREEN

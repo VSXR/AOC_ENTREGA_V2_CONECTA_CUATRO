@@ -23,8 +23,8 @@ GAME_SCREEN:
     LD A, PLAYER_1
     LD (GUARDAR_JUGADOR_ACTUAL), A ; El Jugador 1 siempre empieza
     
-    LD A, 3
-    LD (CURRENT_COLUMN), A      ; Poner la ficha flotante en la columna 3 (centro)
+    XOR A
+    LD (CURRENT_ROW), A         ; Ficha flotante empieza en fila 0 (INPUT_Inicializar_Teclado la reseteará también)
 
     ; --- 4. Dibujado inicial y Ceder Control ---
     ; Dibuja el tablero azul vacío con los 42 huecos negros.

@@ -46,11 +46,11 @@ UTIL_PintarNfichasAlternandoColores_Loop:
     RET
 
 ; ==========================================================================
-; FUNCIÓN: UTIL_VISUAL_ERROR_FULL_COLUMN
-; Realiza un efecto visual de error (borde rojo parpadeante) 
-; parpadeando 2 veces lentamente que indica que la columna está llena.
+; FUNCIÓN: UTIL_VISUAL_ERROR_FULL_ROW
+; Realiza un efecto visual de error (borde rojo parpadeante)
+; parpadeando 2 veces lentamente para indicar que la fila elegida está llena.
 ; ==========================================================================
-UTIL_VISUAL_ERROR_FULL_COLUMN:
+UTIL_VISUAL_ERROR_FULL_ROW:
     PUSH AF: PUSH BC: PUSH DE
     LD D, 2     ;Contador para parpadear 2 veces
 

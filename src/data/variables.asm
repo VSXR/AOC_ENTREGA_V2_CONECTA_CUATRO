@@ -1,7 +1,7 @@
 ; ============================================================================================
 ; ARCHIVO: variables.asm
 ; USO: Define el espacio en memoria para variables MUTABLES (que cambian)
-;      para el estado del juego Conecta 4.
+;      para el estado del juego Conecta 3.
 ; ============================================================================================
 
 ; ============================================================================================
@@ -13,9 +13,9 @@ MESSAGE_KEY_SN:          DB 0, 0
 ; ============================================================================================
 ; 2. ESTADO DEL JUEGO (GAME STATE)
 ; ============================================================================================
-GUARDAR_JUGADOR_ACTUAL:  DB 0           ; Jugador activo (1 = P1, 2 = P2)
-CURRENT_COLUMN:          DB 0           ; Columna (0-6) de la ficha flotante
-PREVIOUS_COLUMN:         DB 0           ; Columna (0-6) en el frame anterior (para evitar parpadeo)
+GUARDAR_JUGADOR_ACTUAL:  DB 0           ; Jugador activo (1=P1, 2=P2, 3=P3)
+CURRENT_ROW:             DB 0           ; Fila (0-5) seleccionada para la ficha flotante
+PREVIOUS_ROW:            DB 0           ; Fila (0-5) en el frame anterior (para evitar parpadeo)
 TOTAL_FICHAS_PUESTAS:    DB 0           ; Contador de fichas (0-42) para detectar empate
 
 ; --- Variables para la comprobación de victoria ---
@@ -24,11 +24,11 @@ LAST_COL:                DB 0           ; Columna (0-6) de la última ficha colo
 
 ; --- Temporizador de Cooldown ---
 ; DW (Define Word) = 16 bits (0-65535)
-; Se usa en keyboard.asm para el retraso de movimiento IZQ/DRCHA
+; Se usa en keyboard.asm para el retraso de movimiento ARRIBA/ABAJO
 MOVE_COOLDOWN_TIMER:     DW 0
 
 ; --- Estado de Fin de Juego ---
-; (0 = Juego en curso o Empate, 1 = Gana P1, 2 = Gana P2)
+; (0 = Juego en curso o Empate, 1 = Gana P1, 2 = Gana P2, 3 = Gana P3)
 GAME_OVER_REASON:        DB 0
 
 ; --- Tablero Lógico ---
@@ -41,9 +41,16 @@ BOARD_ARRAY:
     DEFB 0,0,0,0,0,0,0   ; Fila 4
     DEFB 0,0,0,0,0,0,0   ; Fila 5
 
-; --- Input / Keyboard variables ---
-KEY_MASK_Q      EQU %00000001   ; Bit 0
-KEY_MASK_W      EQU %00000010   ; Bit 1
-KEY_MASK_R      EQU %00001000   ; Bit 3
-KEY_MASK_T      EQU %00010000   ; Bit 4
-KEY_MASK_ENTER  EQU %00000001   ; Bit 0 en puerto &8BFE
+; --- Máscaras de teclado por puerto (ver mapa en constants.asm) ---
+; P1
+KEY_MASK_P1_UP    EQU %00000001   ; Q  -> puerto $FBFE, bit D0
+KEY_MASK_P1_DOWN  EQU %00000001   ; A  -> puerto $FDFE, bit D0
+KEY_MASK_P1_CF    EQU %00000010   ; Z  -> puerto $FEFE, bit D1
+; P2
+KEY_MASK_P2_UP    EQU %00000001   ; P  -> puerto $DFFE, bit D0
+KEY_MASK_P2_DOWN  EQU %00000010   ; L  -> puerto $BFFE, bit D1
+KEY_MASK_P2_CF    EQU %00000001   ; Enter -> puerto $BFFE, bit D0
+; P3
+KEY_MASK_P3_UP    EQU %00001000   ; 7  -> puerto $EFFE, bit D3
+KEY_MASK_P3_DOWN  EQU %00000100   ; 8  -> puerto $EFFE, bit D2
+KEY_MASK_P3_CF    EQU %00010000   ; 6  -> puerto $EFFE, bit D4

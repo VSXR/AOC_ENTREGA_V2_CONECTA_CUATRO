@@ -41,12 +41,10 @@ COLOR_PAPER_AZUL_BRT:    EQU (1*8) + (1*64)                         ; Tinta: (Cu
 ; ============================================================================================
 ; 2. VARIABLES DE COLOR (para Portada)
 ; ============================================================================================
-; Estas variables se cargan en portada.asm para dibujar el "C4".
-; Atributo: Tinta Amarilla (6) + Fondo Negro (0) + Brillante (64) = 70 = $46
-COLOR_CUADRADO_AMARILLO:    DB $46
-
-; Atributo: Tinta Roja (2) + Fondo Negro (0) + Brillante (64) = 66 = $42
-COLOR_CUADRADO_ROJO:        DB $42
+; Usados en portada.asm para dibujar el logo "C3".
+; Derivados de los EQU de jugadores para coherencia con el resto del juego.
+COLOR_CUADRADO_AMARILLO:    DB COLOR_JUGADOR_2 + (1*64)   ; = COLOR_JUGADOR_2 + bright
+COLOR_CUADRADO_ROJO:        DB COLOR_JUGADOR_1 + (1*64)   ; = COLOR_JUGADOR_1 + bright
 
 ; ============================================================================================
 ; 3. CONFIGURACIÓN Y REGLAS DEL JUEGO
@@ -57,28 +55,70 @@ BOARD_COLS:              EQU 7      ; 7 columnas
 
 ; Identificadores de Estado de Celda (en BOARD_ARRAY)
 EMPTY_CELL:              EQU 0      ; Celda vacía
-PLAYER_1:                EQU 1      ; Ficha Roja
-PLAYER_2:                EQU 2      ; Ficha Amarilla
+PLAYER_1:                EQU 1      ; Ficha J1
+PLAYER_2:                EQU 2      ; Ficha J2
+PLAYER_3:                EQU 3      ; Ficha J3
+
+; Condición de victoria - ÚNICO PUNTO DE CONTROL
+WIN_LENGTH:              EQU 3      ; Fichas en raya para ganar
+
+; --- Colores por jugador - CAMBIAR AQUÍ AFECTA TODO EL JUEGO (extra rúbrica) ---
+; Valores ink: 0=Negro, 1=Azul, 2=Rojo, 3=Magenta, 4=Verde, 5=Cian, 6=Amarillo, 7=Blanco
+COLOR_JUGADOR_1:         EQU COLOR_INK_ROJO      ; 2
+COLOR_JUGADOR_2:         EQU COLOR_INK_AMARILLO  ; 6
+COLOR_JUGADOR_3:         EQU COLOR_INK_CIAN      ; 5
+
+; Tabla de atributos derivada automáticamente: ink + bright (64)
+; Indexada 0-based: índice 0 = P1, 1 = P2, 2 = P3
+PLAYER_COLORS:
+    DB COLOR_JUGADOR_1 + (1*64)     ; P1: tinta J1 + brillante
+    DB COLOR_JUGADOR_2 + (1*64)     ; P2: tinta J2 + brillante
+    DB COLOR_JUGADOR_3 + (1*64)     ; P3: tinta J3 + brillante
+
+; Tabla de atributos con fondo azul (para animación sobre tablero)
+PLAYER_COLORS_BOARD:
+    DB COLOR_JUGADOR_1 + COLOR_PAPER_AZUL   ; P1 sobre tablero azul
+    DB COLOR_JUGADOR_2 + COLOR_PAPER_AZUL   ; P2 sobre tablero azul
+    DB COLOR_JUGADOR_3 + COLOR_PAPER_AZUL   ; P3 sobre tablero azul
 
 ; --- Control de Velocidad (para bucle sin HALT) ---
 ; Cuanto más alto el valor, más lento será el movimiento.
-MOVE_DELAY_FRAMES        EQU 1500   ; Pausa (16 bits) para movimiento IZQ/DRCHA
-DROP_ANIM_DELAY          EQU 5500   ; Pausa (16 bits) para animación de caída de ficha
+MOVE_DELAY_FRAMES        EQU 1500   ; Pausa (16 bits) para movimiento ARRIBA/ABAJO
+DROP_ANIM_DELAY          EQU 5500   ; Pausa (16 bits) para animación de deslizamiento
 
 ; ============================================================================================
 ; 4. CONTROLES (CÓDIGOS ASCII)
 ; ============================================================================================
+; Teclas de menú
 KEY_S:                   EQU 'S'    ; Confirmar Sí
 KEY_N:                   EQU 'N'    ; Confirmar No
-KEY_Q:                   EQU 'Q'    ; Mover Izquierda
-KEY_W:                   EQU 'W'    ; Mover Derecha
 KEY_F:                   EQU 'F'    ; Salir del juego (en partida)
-KEY_ENTER:               EQU 13     ; Colocar Ficha
+
+; Códigos internos de movimiento/acción (no corresponden a teclas físicas directas)
+KEY_UP:                  EQU 'U'    ; Señal interna: mover preview arriba
+KEY_DOWN:                EQU 'D'    ; Señal interna: mover preview abajo
+KEY_CONFIRM:             EQU 13     ; Señal interna: confirmar colocación
+
+; --- Mapa de teclas físicas por jugador ---
+; P1 - lado izquierdo del teclado
+;   ARRIBA:   Q  -> puerto $FBFE, bit D0
+;   ABAJO:    A  -> puerto $FDFE, bit D0
+;   CONFIRMAR:Z  -> puerto $FEFE, bit D1
+;
+; P2 - centro-izquierda del teclado
+;   ARRIBA:   E  -> puerto $FBFE, bit D2
+;   ABAJO:    D  -> puerto $FDFE, bit D2
+;   CONFIRMAR:C  -> puerto $FEFE, bit D3
+;
+; P3 - centro del teclado
+;   ARRIBA:   T  -> puerto $FBFE, bit D4
+;   ABAJO:    G  -> puerto $FDFE, bit D4
+;   CONFIRMAR:B  -> puerto $7FFE, bit D4
 
 ; ============================================================================================
 ; 5. TEXTOS Y MENSAJES (Terminados en 0)
 ; ============================================================================================
-WELCOME_MESSAGE:         DB "Bienvenido al Conecta 4", 0
+WELCOME_MESSAGE:         DB "Bienvenido al Conecta 3", 0
 PLAY_MESSAGE_1:          DB "Quieres jugar? ", 0
 GAME_OVER_MESSAGE:       DB "Se acabo el juego!", 0
 PLAY_AGAIN_MESSAGE_1:    DB "Volver a jugar? ", 0
@@ -86,7 +126,7 @@ CONFIRMATION_MESSAGE_SN: DB "(S / N): ", 0
 BYE_MESSAGE:             DB "Hasta pronto!", 0
 EMPTY_MESSAGE:           DB 0                 ; Puntero nulo para título opcional en common.asm
 
-; Nota: La 'X' está en el índice 11, se sobrescribe en EndScreen.asm
+; Nota: El dígito en el índice 11 se sobrescribe dinámicamente en EndScreen.asm
 WINNER_MESSAGE:          DB "El jugador X ha ganado!", 0
 EMPATE_MESSAGE:          DB "Habeis quedado en empate!", 0
 

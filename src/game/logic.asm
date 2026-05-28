@@ -1,8 +1,9 @@
 ; ============================================================================================
 ; ARCHIVO: logic.asm
-; USO: Lógica de comprobación de victoria para Conecta 4.
+; USO: Lógica de comprobación de victoria para Conecta 3.
+;      Detecta WIN_LENGTH (= 3) fichas consecutivas en cualquier dirección.
 ;
-;      OJO: Se llama desde 'input.asm' después de cada turno!
+;      OJO: Se llama desde 'input.asm' después de cada turno.
 ; ============================================================================================
 
 ; ============================================================================================
@@ -75,7 +76,7 @@ CHECK_WIN:
 ;   E = Delta Columna
 ;
 ; SALIDA:
-;   Carry Flag = 1 si la suma total (dir_1 + dir_2 + ficha_central) >= 4
+;   Carry Flag = 1 si la suma total (dir_1 + dir_2 + ficha_central) >= WIN_LENGTH (3)
 ;   Carry Flag = 0 si no
 ; --------------------------------------------------------------------------------------------
 CHECK_LINE:
@@ -103,9 +104,9 @@ CHECK_LINE:
     ADD A, B                    ; A = (Cuenta Dir 1) + (Cuenta Dir 2)
     INC A                       ; Sumar 1 (la ficha central que acabamos de poner)
     
-    ; 5. Comprobar si hay 4 o más en raya
-    CP 4                        ; ¿Es el total (A) >= 4?
-    JR NC, .LINE_WIN            ; Si A >= 4 (No Carry), es victoria
+    ; 5. Comprobar si hay WIN_LENGTH o más en raya
+    CP WIN_LENGTH               ; ¿Es el total (A) >= WIN_LENGTH (= 3)?
+    JR NC, .LINE_WIN            ; Si A >= WIN_LENGTH (No Carry), es victoria
     
     OR A                        ; No hay victoria en esta línea, CF = 0
     RET

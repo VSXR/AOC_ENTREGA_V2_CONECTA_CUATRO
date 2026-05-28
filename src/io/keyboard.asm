@@ -3,8 +3,13 @@
 ; USO: Rutinas de hardware y bucle principal de entrada (teclado) del juego.
 ;
 ; NOTA TÉCNICA: El ZX Spectrum usa LÓGICA NEGATIVA para el teclado:
-;               BIT 0 = Tecla pulsada
-;               BIT 1 = Tecla NO pulsada
+;               BIT = 0 -> Tecla PULSADA
+;               BIT = 1 -> Tecla NO pulsada
+;
+; MAPA DE TECLAS (Conecta 3 - 3 jugadores):
+;   P1 (izquierdo):     Q=Arriba ($FBFE/D0), A=Abajo ($FDFE/D0), Z=Confirmar ($FEFE/D1)
+;   P2 (centro-izq):    E=Arriba ($FBFE/D2), D=Abajo ($FDFE/D2), C=Confirmar ($FEFE/D3)
+;   P3 (centro):        T=Arriba ($FBFE/D4), G=Abajo ($FDFE/D4), B=Confirmar ($7FFE/D4)
 ; ============================================================================================
 
 ; ============================================================================================
@@ -12,24 +17,26 @@
 ; ============================================================================================
 ; --------------------------------------------------------------------------------------------
 ; COLOR_BORDE_PANTALLA
-; Pone el borde de la pantalla en blanco (7). Útil para depuración.
+; Pone el borde de la pantalla en blanco (7).
 ; --------------------------------------------------------------------------------------------
 COLOR_BORDE_PANTALLA:
-    LD A, 7             ; 7 = Color Blanco
-    OUT (254), A        ; Puerto 0xFE para el borde de la pantalla
+    LD A, 7
+    OUT (254), A
     RET
 
 ; --------------------------------------------------------------------------------------------
 ; KEYBOARD_WAIT_RELEASE
-; Espera (en un bucle) hasta que el usuario suelte la tecla que está pulsando.
-; Esto evita la auto-repetición en menús (efecto "debounce" o "falsas pulsaciones de teclas").
-; ENTRADA: BC = Puerto de la fila de teclado a comprobar (ej: $FDFE)
+; Espera hasta que todas las teclas de una fila sean soltadas (debounce).
+;
+; Entrada:  BC = puerto de la fila de teclado a monitorizar
+; Salida:   -
+; Modifica: AF
 ; --------------------------------------------------------------------------------------------
 KEYBOARD_WAIT_RELEASE:
-    IN A, (C)                       ; Lee el puerto de la fila de teclado
-    AND $1F                         ; Enmascara los 5 bits de teclas con el fin de ignorar los bits no usados de esa fila (Solo mantienen los bits que sean '1' en ambos números, eliminan los bits irrelevantes a 0 (bits 5, 6, 7) y deja los relevantes a 1)
-    CP $1F                          ; Compara con %00011111 (estado "todo suelto")
-    JR NZ, KEYBOARD_WAIT_RELEASE    ; Si A no es $1F, alguna tecla sigue pulsada (0). Repetir.
+    IN A, (C)
+    AND $1F                         ; Solo los 5 bits de teclas
+    CP $1F                          ; $1F = todas sueltas (lógica negativa)
+    JR NZ, KEYBOARD_WAIT_RELEASE
     RET
 
 ; ============================================================================================
@@ -37,33 +44,35 @@ KEYBOARD_WAIT_RELEASE:
 ; ============================================================================================
 ; --------------------------------------------------------------------------------------------
 ; KEYBOARD_LEER_SN
-; Detiene la ejecución del programa hasta que el usuario pulsa 'S' o 'N'.
-; Usa KEYBOARD_WAIT_RELEASE para asegurar una sola pulsación.
-; SALIDA: A = 'S' o 'N' (carácter ASCII)
+; Detiene la ejecución hasta que el usuario pulsa 'S' o 'N'.
+;
+; Entrada:  -
+; Salida:   A = 'S' o 'N'
+; Modifica: AF, BC (BC preservado)
 ; --------------------------------------------------------------------------------------------
 KEYBOARD_LEER_SN:
-    PUSH BC             ; Preservamos BC
+    PUSH BC
 
 .CHECK_S:
-    LD BC, $FDFE        ; Puerto/Fila para teclas A,S,D,F,G (Bit 1 = 'S')
+    LD BC, $FDFE        ; Fila A,S,D,F,G - Bit 1 = 'S'
     IN A, (C)
-    BIT 1, A            ; Comprueba el bit 1 ('S')
-    JR Z, .S_PRESSED    ; Si el bit es 0, la tecla está pulsada
+    BIT 1, A
+    JR Z, .S_PRESSED
 
 .CHECK_N:
-    LD BC, $7FFE        ; Puerto/Fila para teclas V,B,N,M,Symbol (Bit 3 = 'N')
+    LD BC, $7FFE        ; Fila Space,Sym,M,N,B - Bit 3 = 'N'
     IN A, (C)
-    BIT 3, A            ; Comprueba el bit 3 ('N')
-    JR NZ, .CHECK_S     ; Si el bit es 1 (no pulsada), volver a comprobar 'S'
+    BIT 3, A
+    JR NZ, .CHECK_S
 
 .N_PRESSED:
-    CALL KEYBOARD_WAIT_RELEASE  ; Espera a que el usuario suelte 'N'
+    CALL KEYBOARD_WAIT_RELEASE
     LD A, 'N'
-    POP BC                      ; Restauramos BC
+    POP BC
     RET
 
 .S_PRESSED:
-    CALL KEYBOARD_WAIT_RELEASE  ; Espera a que el usuario suelte 'S'
+    CALL KEYBOARD_WAIT_RELEASE
     LD A, 'S'
     POP BC
     RET
@@ -71,83 +80,157 @@ KEYBOARD_LEER_SN:
 ; ============================================================================================
 ; 3. LECTURA NO BLOQUEANTE (POLLING PARA EL JUEGO)
 ; ============================================================================================
-; Estas rutinas comprueban el estado de una tecla y retornan inmediatamente.
-; Son esenciales para el bucle de juego, ya que no detienen el programa.
-
 ; --------------------------------------------------------------------------------------------
 ; KEYBOARD_POLL_PLAYER_MOVE
-; Comprueba las teclas de movimiento basándose en el jugador actual.
+; Comprueba las teclas de movimiento vertical del jugador activo.
 ;
-; JUGADOR 1: Puerto $FBFE -> Q (Bit 0, Izquierda), W (Bit 1, Derecha)
-; JUGADOR 2: Puerto $DFFE -> O (Bit 1, Izquierda), P (Bit 0, Derecha)
-;
-; NOTA: Se ha corregido el puerto de J2 a $DFFE. Antes estaba en $BFFE, 
-;       lo que causaba conflicto con la tecla ENTER.
-;
-; SALIDA: A = 'Q' (si se debe mover a la izquierda), 
-;             'W' (si se debe mover a la derecha),
-;              0  (si no se pulsó nada)
-; REGISTROS USADOS: AF, BC
+; Entrada:  (GUARDAR_JUGADOR_ACTUAL) - jugador activo (1, 2 o 3)
+; Salida:   A = KEY_UP  si tecla arriba pulsada
+;           A = KEY_DOWN si tecla abajo pulsada
+;           A = 0       si ninguna tecla pulsada
+; Modifica: AF, BC
 ; --------------------------------------------------------------------------------------------
 KEYBOARD_POLL_PLAYER_MOVE:
     LD A, (GUARDAR_JUGADOR_ACTUAL)
-    CP PLAYER_1
-    JR Z, .CHECK_P1_KEYS
-
-.CHECK_P2_KEYS:
-    ; --- El jugador 2 está activo: Usamos Puerto P, O, I, U, Y ($DFFE) ---
-    LD BC, $DFFE        
-    IN A, (C)
-    BIT 1, A            ; Tecla 'O' (Bit 1) -> Mover Izquierda J2
-    JR Z, .RET_Q        ; Reutilizamos retorno 'Q' como señal de "Izquierda"
-    BIT 0, A            ; Tecla 'P' (Bit 0) -> Mover Derecha J2
-    JR Z, .RET_W        ; Reutilizamos retorno 'W' como señal de "Derecha"
-    JR .RET_NONE        ; Ninguna tecla pulsada
+    CP PLAYER_2
+    JR Z, .CHECK_P2_KEYS
+    CP PLAYER_3
+    JR Z, .CHECK_P3_KEYS
 
 .CHECK_P1_KEYS:
-    ; --- El jugador 1 está activo: Usamos Puerto Q, W, E, R, T ($FBFE) ---
-    LD BC, $FBFE        
+    ; P1: Q=Arriba ($FBFE/D0),  A=Abajo ($FDFE/D0)
+    LD BC, $FBFE
     IN A, (C)
-    BIT 0, A            ; Tecla 'Q' (Bit 0) -> Mover Izquierda J1
-    JR Z, .RET_Q
-    BIT 1, A            ; Tecla 'W' (Bit 1) -> Mover Derecha J1
-    JR Z, .RET_W
-    
+    BIT 0, A            ; Q = bit D0
+    JR Z, .RET_UP
+
+    LD BC, $FDFE
+    IN A, (C)
+    BIT 0, A            ; A = bit D0
+    JR Z, .RET_DOWN
+    JR .RET_NONE
+
+.CHECK_P2_KEYS:
+    ; P2: E=Arriba ($FBFE/D2),  D=Abajo ($FDFE/D2)
+    LD BC, $FBFE
+    IN A, (C)
+    BIT 2, A            ; E = bit D2
+    JR Z, .RET_UP
+
+    LD BC, $FDFE
+    IN A, (C)
+    BIT 2, A            ; D = bit D2
+    JR Z, .RET_DOWN
+    JR .RET_NONE
+
+.CHECK_P3_KEYS:
+    ; P3: T=Arriba ($FBFE/D4),  G=Abajo ($FDFE/D4)
+    LD BC, $FBFE
+    IN A, (C)
+    BIT 4, A            ; T = bit D4
+    JR Z, .RET_UP
+
+    LD BC, $FDFE
+    IN A, (C)
+    BIT 4, A            ; G = bit D4
+    JR Z, .RET_DOWN
+
 .RET_NONE:
-    XOR A               ; A = 0 (Ninguna tecla de movimiento pulsada)
+    XOR A
     RET
-.RET_Q:
-    LD A, 'Q'           ; Retorna 'Q' para "Mover Izquierda" (Abstracto)
+.RET_UP:
+    LD A, KEY_UP
     RET
-.RET_W:
-    LD A, 'W'           ; Retorna 'W' para "Mover Derecha" (Abstracto)
+.RET_DOWN:
+    LD A, KEY_DOWN
     RET
 
 ; --------------------------------------------------------------------------------------------
-; KEYBOARD_POLL_ENTER
-; Comprueba si 'ENTER' está pulsada AHORA MISMO.
-; SALIDA: A = 13 (ASCII Enter) o 0
-; REGISTROS USADOS: AF, BC
+; KEYBOARD_POLL_CONFIRM
+; Comprueba si el jugador activo ha pulsado su tecla CONFIRMAR.
+;
+; Entrada:  (GUARDAR_JUGADOR_ACTUAL) - jugador activo (1, 2 o 3)
+; Salida:   A = KEY_CONFIRM (13) si pulsada, A = 0 si no
+; Modifica: AF, BC
 ; --------------------------------------------------------------------------------------------
-KEYBOARD_POLL_ENTER:
-    LD BC, $BFFE        ; Puerto/Fila para P,O,I,U,Y,ENTER (Bit 0='ENTER')
+KEYBOARD_POLL_CONFIRM:
+    LD A, (GUARDAR_JUGADOR_ACTUAL)
+    CP PLAYER_2
+    JR Z, .CONFIRM_P2
+    CP PLAYER_3
+    JR Z, .CONFIRM_P3
+
+.CONFIRM_P1:
+    ; Z = $FEFE / bit D1
+    LD BC, $FEFE
     IN A, (C)
-    BIT 0, A
-    JR NZ, .NO_ENTER
-    LD A, 13
+    BIT 1, A
+    JR NZ, .NO_CONFIRM
+    JR .YES_CONFIRM
+
+.CONFIRM_P2:
+    ; C = $FEFE / bit D3
+    LD BC, $FEFE
+    IN A, (C)
+    BIT 3, A
+    JR NZ, .NO_CONFIRM
+    JR .YES_CONFIRM
+
+.CONFIRM_P3:
+    ; B = $7FFE / bit D4
+    LD BC, $7FFE
+    IN A, (C)
+    BIT 4, A
+    JR NZ, .NO_CONFIRM
+
+.YES_CONFIRM:
+    LD A, KEY_CONFIRM
     RET
-.NO_ENTER:
+.NO_CONFIRM:
     XOR A
     RET
 
 ; --------------------------------------------------------------------------------------------
+; KEYBOARD_WAIT_RELEASE_CONFIRM
+; Espera a que el jugador activo suelte su tecla CONFIRMAR (debounce post-acción).
+;
+; Entrada:  (GUARDAR_JUGADOR_ACTUAL) - jugador activo (1, 2 o 3)
+; Salida:   -
+; Modifica: AF, BC
+; --------------------------------------------------------------------------------------------
+KEYBOARD_WAIT_RELEASE_CONFIRM:
+    PUSH AF
+    LD A, (GUARDAR_JUGADOR_ACTUAL)
+    CP PLAYER_2
+    JR Z, .WR_P2
+    CP PLAYER_3
+    JR Z, .WR_P3
+
+.WR_P1:
+    LD BC, $FEFE        ; Puerto de Z (P1 confirm)
+    JR .DO_WAIT
+
+.WR_P2:
+    LD BC, $FEFE        ; Puerto de C (P2 confirm)
+    JR .DO_WAIT
+
+.WR_P3:
+    LD BC, $7FFE        ; Puerto de B (P3 confirm)
+
+.DO_WAIT:
+    POP AF
+    JP KEYBOARD_WAIT_RELEASE    ; Preserva AF ya recuperado
+
+; --------------------------------------------------------------------------------------------
 ; KEYBOARD_POLL_F
-; Comprueba si 'F' está pulsada AHORA MISMO.
-; SALIDA: A = 'F' (ASCII) o 0
-; REGISTROS USADOS: AF, BC
+; Comprueba si 'F' (salir del juego) está pulsada.
+;
+; Entrada:  -
+; Salida:   A = 'F' o 0
+; Modifica: AF, BC
 ; --------------------------------------------------------------------------------------------
 KEYBOARD_POLL_F:
-    LD BC, $FDFE        ; Puerto/Fila para A,S,D,F,G (Bit 3='F')
+    LD BC, $FDFE        ; Fila A,S,D,F,G - Bit 3 = 'F'
     IN A, (C)
     BIT 3, A
     JR NZ, .NO_F
@@ -157,175 +240,159 @@ KEYBOARD_POLL_F:
     XOR A
     RET
 
-; =========================================================================================================================
+; ============================================================================================
 ; 4. BUCLE PRINCIPAL DE ENTRADA (GAME INPUT LOOP)
-; =========================================================================================================================
-; Este es el corazón del juego. Se ejecuta continuamente sin HALT (llamado en este caso, "busy-loop" o "bucle loco").
-; Gestiona el temporizador de 16 bits y la lógica de redibujado la ficha del jugador al moverse.
+; ============================================================================================
+; Bucle ocupado (busy-loop) sin HALT. El temporizador de 16 bits controla la velocidad
+; del movimiento vertical del preview para evitar desplazamiento demasiado rápido.
+;
+; Flujo: inicializar -> poll teclas -> gestionar movimiento/confirmación -> redibujar -> repetir
 
 KEYBOARD_ActivarInput_Keys:
-    CALL INPUT_Inicializar_Teclado      ; Prepara la primera ficha del jugador
-    LD A, (CURRENT_COLUMN)
-    LD (PREVIOUS_COLUMN), A             ; Sincroniza la columna previa
-    
-    ; Inicializar el temporizador de 16 bits (MOVE_COOLDOWN_TIMER) a 0
+    CALL INPUT_Inicializar_Teclado  ; Prepara estado inicial y dibuja preview de P1
+
+    ; Sincronizar PREVIOUS_ROW con la fila inicial
+    LD A, (CURRENT_ROW)
+    LD (PREVIOUS_ROW), A
+
+    ; Inicializar temporizador de 16 bits a 0 (permite movimiento inmediato)
     LD HL, MOVE_COOLDOWN_TIMER
     XOR A
-    LD (HL), A                          ; Escribe 0 en el byte bajo con el fin de permitir movimiento inmediato
+    LD (HL), A
     INC HL
-    LD (HL), A                          ; Escribe 0 en el byte alto, con el mismo fin
+    LD (HL), A
 
 .LOOP:
-    ; Este bucle se ejecuta a la máxima velocidad del Z80, ya que no podemos deshabilitar las interrupciones DI 
-    ; para la practica. Por lo tanto, el temporizador de 16 bits se decrementa en cada iteración del bucle.
-
     ; --- 1. GESTIÓN DEL TEMPORIZADOR DE COOLDOWN (16 bits) ---
-    ; Carga el valor actual del temporizador (16 bits) en BC
     LD HL, MOVE_COOLDOWN_TIMER
     LD C, (HL)
     INC HL
     LD B, (HL)
 
-    ; Comprueba si el temporizador (BC) es 0
     LD A, B
-    OR C                        ; A = B | C. Si A es 0, BC es 0.
-    JR Z, .SKIP_COOLDOWN_DEC    ; Si es 0, no hay nada que decrementar
+    OR C
+    JR Z, .SKIP_COOLDOWN_DEC
 
-    DEC BC                      ; Si no es 0, lo decrementa
-    
-    ; Guarda el nuevo valor (BC-1) en memoria
+    DEC BC
     LD HL, MOVE_COOLDOWN_TIMER
     LD (HL), C
     INC HL
     LD (HL), B
+
 .SKIP_COOLDOWN_DEC:
-    ; --- FIN DEL MANEJO DE COOLDOWN ---
-    
-    ; --- 2. SONDEO DE TECLAS (POLLING) ---
-    ; Llama a la rutina de sondeo de movimiento.
-    ; Esta rutina devuelve 'Q' (izquierda) o 'W' (derecha) según el jugador activo.
+    ; --- 2. SONDEO DE TECLAS DE MOVIMIENTO ---
     CALL KEYBOARD_POLL_PLAYER_MOVE
 
-    CP 'Q'
-    JR Z, .HANDLE_Q_CONTINUOUS
-    CP 'W'
-    JR Z, .HANDLE_W_CONTINUOUS
+    CP KEY_UP
+    JR Z, .HANDLE_UP_CONTINUOUS
+    CP KEY_DOWN
+    JR Z, .HANDLE_DOWN_CONTINUOUS
 
-    CALL KEYBOARD_POLL_ENTER
-    CP 13
-    JP Z, .HANDLE_ENTER_PRESS
+    ; --- 3. SONDEO DE CONFIRMAR Y SALIR ---
+    CALL KEYBOARD_POLL_CONFIRM
+    CP KEY_CONFIRM
+    JP Z, .HANDLE_CONFIRM_PRESS
 
     CALL KEYBOARD_POLL_F
     CP 'F'
     JP Z, .HANDLE_F_PRESS
 
-    JR .LOOP                    ; Si no se pulsó nada, repetir el bucle
+    JR .LOOP
 
 ; --------------------------------------------------------------------------------------------
-; MANEJADORES DE MOVIMIENTO (Q y W)
+; MANEJADORES DE MOVIMIENTO VERTICAL (ARRIBA y ABAJO)
 ; --------------------------------------------------------------------------------------------
-.HANDLE_Q_CONTINUOUS:
-    ; Es VITAL recargar el temporizador desde la memoria, ya que la
-    ; llamada a KEYBOARD_POLL_PLAYER_MOVE sobrescribe el registro BC.
+.HANDLE_UP_CONTINUOUS:
+    ; Recargar temporizador (BC destruido por KEYBOARD_POLL_PLAYER_MOVE)
     LD HL, MOVE_COOLDOWN_TIMER
     LD C, (HL)
     INC HL
     LD B, (HL)
 
-    ; Comprobar si el temporizador (BC) ha llegado a 0
     LD A, B
     OR C
-    JR NZ, .CHECK_REDRAW            ; Si no es 0 (timer activo), no mover. Saltar a redibujar.
+    JR NZ, .CHECK_REDRAW        ; Timer activo -> no mover!!
 
-    ; Si el temporizador es 0, SE PERMITE EL MOVIMIENTO
-    LD A, (CURRENT_COLUMN)
-    OR A                            ; ¿Estamos en la columna 0 (borde izq)?
-    JR Z, .CHECK_REDRAW             ; Si sí, no mover.
-    DEC A                           ; Mover a la izquierda
-    LD (CURRENT_COLUMN), A
-    
-    ; Reiniciar el temporizador al valor de MOVE_DELAY_FRAMES
-    LD BC, MOVE_DELAY_FRAMES
-    LD HL, MOVE_COOLDOWN_TIMER
-    LD (HL), C
-    INC HL
-    LD (HL), B
-    
-    JR .CHECK_REDRAW                ; Saltar a redibujar (ahora que la columna ha cambiado)
+    ; Timer = 0: mover si no estamos en la fila 0
+    LD A, (CURRENT_ROW)
+    OR A                        ; ¿Ya en fila 0?
+    JR Z, .CHECK_REDRAW
+    DEC A
+    LD (CURRENT_ROW), A
 
-.HANDLE_W_CONTINUOUS:
-    ; Recargamos el temporizador (BC fue destruido por KEYBOARD_POLL_PLAYER_MOVE)
-    LD HL, MOVE_COOLDOWN_TIMER
-    LD C, (HL)
-    INC HL
-    LD B, (HL)
-
-    ; Comprobar si el temporizador (BC) ha llegado a 0
-    LD A, B
-    OR C
-    JR NZ, .CHECK_REDRAW            ; Si no es 0 (timer activo), no mover.
-
-    ; Si el temporizador es 0, SE PERMITE EL MOVIMIENTO
-    LD A, (CURRENT_COLUMN)
-    CP 6                            ; ¿Estamos en la columna 6 (borde der)?
-    JR Z, .CHECK_REDRAW             ; Si sí, no mover.
-    INC A                           ; Mover a la derecha
-    LD (CURRENT_COLUMN), A
-    
-    ; Reiniciar el temporizador
     LD BC, MOVE_DELAY_FRAMES
     LD HL, MOVE_COOLDOWN_TIMER
     LD (HL), C
     INC HL
     LD (HL), B
 
-    JR .CHECK_REDRAW                ; Saltar a redibujar
+    JR .CHECK_REDRAW
+
+.HANDLE_DOWN_CONTINUOUS:
+    LD HL, MOVE_COOLDOWN_TIMER
+    LD C, (HL)
+    INC HL
+    LD B, (HL)
+
+    LD A, B
+    OR C
+    JR NZ, .CHECK_REDRAW
+
+    ; Timer = 0: mover si no estamos en la fila 5 (BOARD_ROWS - 1)
+    LD A, (CURRENT_ROW)
+    CP BOARD_ROWS - 1           ; ¿Ya en fila 5?
+    JR Z, .CHECK_REDRAW
+    INC A
+    LD (CURRENT_ROW), A
+
+    LD BC, MOVE_DELAY_FRAMES
+    LD HL, MOVE_COOLDOWN_TIMER
+    LD (HL), C
+    INC HL
+    LD (HL), B
+
+    JR .CHECK_REDRAW
 
 ; --------------------------------------------------------------------------------------------
-; RUTINA DE REDIBUJADO
-; Compara la columna actual con la anterior para evitar redibujar si no hay cambios.
-; Esta es la optimización clave para PREVENIR EL PARPADEO.
+; RUTINA DE REDIBUJADO - Previene parpadeo comparando fila actual con la anterior
 ; --------------------------------------------------------------------------------------------
 .CHECK_REDRAW:
-    LD A, (CURRENT_COLUMN)          ; A = Columna Nueva
-    LD B, A                         ; B = Columna Nueva
-    LD A, (PREVIOUS_COLUMN)         ; A = Columna Antigua
-    CP B                            ; ¿Es Columna Antigua == Columna Nueva?
-    JR Z, .LOOP                     ; Si son iguales, no ha habido movimiento. Volver al bucle sin redibujar.
-    
-    ; Si son diferentes, el jugador movió la ficha, por lo que hay que redibujarla en su nueva posición:
-    ; 1. Borrar la ficha de la posición ANTIGUA
-    LD A, (PREVIOUS_COLUMN)         ; Cargar A (antigua) en la variable global para que ERASE_PREVIEW sepa qué borrar
-    LD (CURRENT_COLUMN), A
+    LD A, (CURRENT_ROW)         ; A = fila nueva
+    LD B, A
+    LD A, (PREVIOUS_ROW)        ; A = fila antigua
+    CP B
+    JR Z, .LOOP                 ; Sin cambio, no redibujar
+
+    ; 1. Borrar preview en la posición ANTIGUA
+    LD A, (PREVIOUS_ROW)
+    LD (CURRENT_ROW), A         ; Temporalmente apuntamos a la fila antigua
     CALL ERASE_PREVIEW
-    
-    ; 2. Dibujar la ficha en la posición NUEVA
-    LD A, B                         ; Recuperamos la Columna Nueva
-    LD (CURRENT_COLUMN), A          ; La ponemos en la variable global
+
+    ; 2. Dibujar preview en la posición NUEVA
+    LD A, B
+    LD (CURRENT_ROW), A
     CALL DIBUJAR_FICHA_JUGADOR
 
-    ; 3. Actualizar la posición antigua para el próximo fotograma
-    LD (PREVIOUS_COLUMN), A         ; PREVIOUS_COLUMN = CURRENT_COLUMN
+    ; 3. Sincronizar PREVIOUS_ROW
+    LD (PREVIOUS_ROW), A
     JP .LOOP
 
 ; --------------------------------------------------------------------------------------------
-; MANEJADORES DE ACCIÓN (ENTER y F)
-; Estas acciones deben ocurrir UNA SOLA VEZ por pulsación.
+; MANEJADORES DE ACCIÓN (CONFIRMAR y F)
+; Una sola acción por pulsación gracias a KEYBOARD_WAIT_RELEASE_CONFIRM.
 ; --------------------------------------------------------------------------------------------
-.HANDLE_ENTER_PRESS:
-    LD BC, $BFFE                    ; Recargar puerto de ENTER
-    CALL KEYBOARD_WAIT_RELEASE      ; Esperar a que el usuario SUELTE la tecla
-    CALL ERASE_PREVIEW              ; Borrar la ficha flotante
-    CALL COLOCAR_FICHA_EN_TABLERO   ; Lógica principal (dejar caer, comprobar victoria, etc.)
-    
-    ; Si el juego no ha terminado, COLOCAR_FICHA retornará aquí
-    CALL DIBUJAR_FICHA_JUGADOR      ; Dibuja la ficha flotante del siguiente turno
-    LD A, (CURRENT_COLUMN)          ; Resincroniza la columna previa
-    LD (PREVIOUS_COLUMN), A
+.HANDLE_CONFIRM_PRESS:
+    CALL KEYBOARD_WAIT_RELEASE_CONFIRM  ; Esperar a que el jugador suelte su tecla CONFIRM
+    CALL ERASE_PREVIEW
+    CALL COLOCAR_FICHA_EN_TABLERO       ; Lógica completa del turno (puede JP a GAME_End)
+
+    ; Si el juego continúa, retorna aquí
+    CALL DIBUJAR_FICHA_JUGADOR          ; Preview del siguiente jugador
+    LD A, (CURRENT_ROW)
+    LD (PREVIOUS_ROW), A                ; Sincronizar
     JP .LOOP
 
 .HANDLE_F_PRESS:
-    LD BC, $FDFE                    ; Recargar puerto de F
-    CALL KEYBOARD_WAIT_RELEASE      ; Esperar a que suelte F
-    CALL GAME_End                   ; Salta a la pantalla de fin de juego
-    RET
+    LD BC, $FDFE
+    CALL KEYBOARD_WAIT_RELEASE
+    JP GAME_End
