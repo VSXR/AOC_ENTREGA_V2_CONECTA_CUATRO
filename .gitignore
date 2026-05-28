@@ -1,0 +1,13 @@
+# Temporary files
+.tmp/
+
+# VS Code files
+.vscode/
+
+# Conect 4 files
+*.bin
+*.lst
+*.sld
+
+# Files that ARE NOT OMITTED
+!charset.bin
