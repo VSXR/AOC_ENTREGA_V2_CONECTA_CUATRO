@@ -1,0 +1,2474 @@
+# file opened: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\ConnectFour.asm
+  1   0000              ; ============================================================================================
+  2   0000              ; ARCHIVO: ConnectFour.asm
+  3   0000              ; USO: Archivo principal y punto de entrada (entry point) del juego "Conecta 3".
+  4   0000              ;      Define la configuración del ensamblador Z80, inicializa la CPU,
+  5   0000              ;      la pila (stack) y transfiere el control a la pantalla de inicio.
+  6   0000              ; ============================================================================================
+  7   0000
+  8   0000                  DEVICE ZXSPECTRUM48
+  9   0000              	SLDOPT COMMENT WPMEM, LOGPOINT, ASSETION
+ 10   0000                  ORG $8000
+ 11   8000
+ 12   8000              ; ============================================================================================
+ 13   8000              ; PUNTO DE ENTRADA E INICIALIZACIÓN
+ 14   8000              ; ============================================================================================
+ 15   8000              BEGIN:
+ 16   8000 F3               DI
+ 17   8001 31 FF FF         LD SP, $FFFF        ; Inicializamos la pila al final de la memoria para no chocar con la direccion ORG $8000 (por si acaso)
+ 18   8004
+ 19   8004 CD 59 87         CALL CLEARSCR
+ 20   8007 C3 E6 8A         JP START_SCREEN
+ 21   800A
+ 22   800A              ; ============================================================================================
+ 23   800A              ; INCLUDES DEL PROYECTO (ARCHIVOS .ASM)
+ 24   800A              ; ============================================================================================
+ 25   800A              ; ----------------------------------------------
+ 26   800A              ; 1. Datos (Variables y Constantes)
+ 27   800A              ; ----------------------------------------------
+ 28   800A                  INCLUDE "data/constants.asm"
+# file opened: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\data/constants.asm
+  1+  800A              ; ============================================================================================
+  2+  800A              ; ARCHIVO: constants.asm
+  3+  800A              ; USO: Constantes inmutables del juego (configuración, textos, gráficos)
+  4+  800A              ;      Valores definidos con EQU (constante) o DB (Data Bytes)
+  5+  800A              ; ============================================================================================
+  6+  800A
+  7+  800A              ; ============================================================================================
+  8+  800A              ; 1. CONSTANTES DE COLOR (ATRIBUTOS ZX SPECTRUM)
+  9+  800A              ; ============================================================================================
+ 10+  800A              ; Formato Atributo (8 bits): INK + (PAPER*8) + (BRIGHT*64) + (FLASH*128)
+ 11+  800A              ; Donde:
+ 12+  800A              ; B = Bright (1=Brillante), F = Flash (1=Parpadeo)
+ 13+  800A              ; P = Paper (Color de fondo, 0-7)
+ 14+  800A              ; I = Ink (Color de tinta, 0-7)
+ 15+  800A              ;
+ 16+  800A              ; Valores base INK/PAPER: 0=Negro, 1=Azul, 2=Rojo, 3=Magenta, 4=Verde, 5=Cian, 6=Amarillo, 7=Blanco
+ 17+  800A              ; Valores base BRIGHT/FLASH: 0=Apagado, 1=Encendido
+ 18+  800A
+ 19+  800A              ; Valores base (0=Negro, 1=Azul, 2=Rojo, 3=Magenta, 4=Verde, 5=Cian, 6=Amarillo, 7=Blanco)
+ 20+  800A              COLOR_INK_NEGRO:         EQU 0
+ 21+  800A              COLOR_INK_AZUL:          EQU 1
+ 22+  800A              COLOR_INK_ROJO:          EQU 2
+ 23+  800A              COLOR_INK_MAGENTA:       EQU 3
+ 24+  800A              COLOR_INK_VERDE:         EQU 4
+ 25+  800A              COLOR_INK_CIAN:          EQU 5
+ 26+  800A              COLOR_INK_AMARILLO:      EQU 6
+ 27+  800A              COLOR_INK_BLANCO:        EQU 7
+ 28+  800A
+ 29+  800A              ; --- Atributos Compuestos Usados en el Juego ---
+ 30+  800A              ; Título (StartScreen)
+ 31+  800A              COLOR_AMARILLO_NEGRO:    EQU COLOR_INK_AMARILLO + (0*8) + (1*64)    ; Tinta: Amarillo Brillante, Fondo: Negro
+ 32+  800A
+ 33+  800A              ; Título (EndScreen) y Prompt (common.asm)
+ 34+  800A              COLOR_ROJO_BLANCO_FLASH: EQU COLOR_INK_ROJO + (7*8) + (1*64) + 128  ; Tinta: Rojo Brillante, Fondo: Blanco, Parpadeo
+ 35+  800A              COLOR_NEGRO_BLANCO:      EQU COLOR_INK_NEGRO + (7*8)                ; Tinta: Negro, Fondo: Blanco
+ 36+  800A
+ 37+  800A              ; Fondo del Tablero (tablero.asm)
+ 38+  800A              COLOR_PAPER_AZUL:        EQU (1*8)                                  ; Tinta: (Cualquiera), Fondo: Azul
+ 39+  800A              COLOR_PAPER_AZUL_BRT:    EQU (1*8) + (1*64)                         ; Tinta: (Cualquiera), Fondo: Azul Brillante
+ 40+  800A
+ 41+  800A              ; ============================================================================================
+ 42+  800A              ; 2. VARIABLES DE COLOR (para Portada)
+ 43+  800A              ; ============================================================================================
+ 44+  800A              ; Usados en portada.asm para dibujar el logo "C3".
+ 45+  800A              ; Derivados de los EQU de jugadores para coherencia con el resto del juego.
+ 46+  800A 46           COLOR_CUADRADO_AMARILLO:    DB COLOR_JUGADOR_2 + (1*64)   ; = COLOR_JUGADOR_2 + bright
+ 47+  800B 42           COLOR_CUADRADO_ROJO:        DB COLOR_JUGADOR_1 + (1*64)   ; = COLOR_JUGADOR_1 + bright
+ 48+  800C
+ 49+  800C              ; ============================================================================================
+ 50+  800C              ; 3. CONFIGURACIÓN Y REGLAS DEL JUEGO
+ 51+  800C              ; ============================================================================================
+ 52+  800C              ; Dimensiones del Tablero
+ 53+  800C              BOARD_ROWS:              EQU 6      ; 6 filas
+ 54+  800C              BOARD_COLS:              EQU 7      ; 7 columnas
+ 55+  800C
+ 56+  800C              ; Identificadores de Estado de Celda (en BOARD_ARRAY)
+ 57+  800C              EMPTY_CELL:              EQU 0      ; Celda vacía
+ 58+  800C              PLAYER_1:                EQU 1      ; Ficha J1
+ 59+  800C              PLAYER_2:                EQU 2      ; Ficha J2
+ 60+  800C              PLAYER_3:                EQU 3      ; Ficha J3
+ 61+  800C
+ 62+  800C              ; Condición de victoria - ÚNICO PUNTO DE CONTROL
+ 63+  800C              WIN_LENGTH:              EQU 3      ; Fichas en raya para ganar
+ 64+  800C
+ 65+  800C              ; --- Colores por jugador - CAMBIAR AQUÍ AFECTA TODO EL JUEGO (extra rúbrica) ---
+ 66+  800C              ; Valores ink: 0=Negro, 1=Azul, 2=Rojo, 3=Magenta, 4=Verde, 5=Cian, 6=Amarillo, 7=Blanco
+ 67+  800C              COLOR_JUGADOR_1:         EQU COLOR_INK_ROJO      ; 2
+ 68+  800C              COLOR_JUGADOR_2:         EQU COLOR_INK_AMARILLO  ; 6
+ 69+  800C              COLOR_JUGADOR_3:         EQU COLOR_INK_CIAN      ; 5
+ 70+  800C
+ 71+  800C              ; Tabla de atributos derivada automáticamente: ink + bright (64)
+ 72+  800C              ; Indexada 0-based: índice 0 = P1, 1 = P2, 2 = P3
+ 73+  800C              PLAYER_COLORS:
+ 74+  800C 42               DB COLOR_JUGADOR_1 + (1*64)     ; P1: tinta J1 + brillante
+ 75+  800D 46               DB COLOR_JUGADOR_2 + (1*64)     ; P2: tinta J2 + brillante
+ 76+  800E 45               DB COLOR_JUGADOR_3 + (1*64)     ; P3: tinta J3 + brillante
+ 77+  800F
+ 78+  800F              ; Tabla de atributos con fondo azul (para animación sobre tablero)
+ 79+  800F              PLAYER_COLORS_BOARD:
+ 80+  800F 0A               DB COLOR_JUGADOR_1 + COLOR_PAPER_AZUL   ; P1 sobre tablero azul
+ 81+  8010 0E               DB COLOR_JUGADOR_2 + COLOR_PAPER_AZUL   ; P2 sobre tablero azul
+ 82+  8011 0D               DB COLOR_JUGADOR_3 + COLOR_PAPER_AZUL   ; P3 sobre tablero azul
+ 83+  8012
+ 84+  8012              ; --- Control de Velocidad (para bucle sin HALT) ---
+ 85+  8012              ; Cuanto más alto el valor, más lento será el movimiento.
+ 86+  8012              MOVE_DELAY_FRAMES        EQU 1500   ; Pausa (16 bits) para movimiento ARRIBA/ABAJO
+ 87+  8012              DROP_ANIM_DELAY          EQU 5500   ; Pausa (16 bits) para animación de deslizamiento
+ 88+  8012
+ 89+  8012              ; ============================================================================================
+ 90+  8012              ; 4. CONTROLES (CÓDIGOS ASCII)
+ 91+  8012              ; ============================================================================================
+ 92+  8012              ; Teclas de menú
+ 93+  8012              KEY_S:                   EQU 'S'    ; Confirmar Sí
+ 94+  8012              KEY_N:                   EQU 'N'    ; Confirmar No
+ 95+  8012              KEY_F:                   EQU 'F'    ; Salir del juego (en partida)
+ 96+  8012
+ 97+  8012              ; Códigos internos de movimiento/acción (no corresponden a teclas físicas directas)
+ 98+  8012              KEY_UP:                  EQU 'U'    ; Señal interna: mover preview arriba
+ 99+  8012              KEY_DOWN:                EQU 'D'    ; Señal interna: mover preview abajo
+100+  8012              KEY_CONFIRM:             EQU 13     ; Señal interna: confirmar colocación
+101+  8012
+102+  8012              ; --- Mapa de teclas físicas por jugador ---
+103+  8012              ; P1 - lado izquierdo del teclado
+104+  8012              ;   ARRIBA:   Q  -> puerto $FBFE, bit D0
+105+  8012              ;   ABAJO:    A  -> puerto $FDFE, bit D0
+106+  8012              ;   CONFIRMAR:Z  -> puerto $FEFE, bit D1
+107+  8012              ;
+108+  8012              ; P2 - centro-izquierda del teclado
+109+  8012              ;   ARRIBA:   E  -> puerto $FBFE, bit D2
+110+  8012              ;   ABAJO:    D  -> puerto $FDFE, bit D2
+111+  8012              ;   CONFIRMAR:C  -> puerto $FEFE, bit D3
+112+  8012              ;
+113+  8012              ; P3 - centro del teclado
+114+  8012              ;   ARRIBA:   T  -> puerto $FBFE, bit D4
+115+  8012              ;   ABAJO:    G  -> puerto $FDFE, bit D4
+116+  8012              ;   CONFIRMAR:B  -> puerto $7FFE, bit D4
+117+  8012
+118+  8012              ; ============================================================================================
+119+  8012              ; 5. TEXTOS Y MENSAJES (Terminados en 0)
+120+  8012              ; ============================================================================================
+121+  8012 42 69 65 6E  WELCOME_MESSAGE:         DB "Bienvenido al Conecta 3", 0
+121+  8016 76 65 6E 69
+121+  801A 64 6F 20 61
+121+  801E 6C 20 43 6F
+121+  8022 6E 65 63 74
+121+  8026 61 20 33 00
+122+  802A 51 75 69 65  PLAY_MESSAGE_1:          DB "Quieres jugar? ", 0
+122+  802E 72 65 73 20
+122+  8032 6A 75 67 61
+122+  8036 72 3F 20 00
+123+  803A 53 65 20 61  GAME_OVER_MESSAGE:       DB "Se acabo el juego!", 0
+123+  803E 63 61 62 6F
+123+  8042 20 65 6C 20
+123+  8046 6A 75 65 67
+123+  804A 6F 21 00
+124+  804D 56 6F 6C 76  PLAY_AGAIN_MESSAGE_1:    DB "Volver a jugar? ", 0
+124+  8051 65 72 20 61
+124+  8055 20 6A 75 67
+124+  8059 61 72 3F 20
+124+  805D 00
+125+  805E 28 53 20 2F  CONFIRMATION_MESSAGE_SN: DB "(S / N): ", 0
+125+  8062 20 4E 29 3A
+125+  8066 20 00
+126+  8068 48 61 73 74  BYE_MESSAGE:             DB "Hasta pronto!", 0
+126+  806C 61 20 70 72
+126+  8070 6F 6E 74 6F
+126+  8074 21 00
+127+  8076 00           EMPTY_MESSAGE:           DB 0                 ; Puntero nulo para título opcional en common.asm
+128+  8077
+129+  8077              ; Nota: El dígito en el índice 11 se sobrescribe dinámicamente en EndScreen.asm
+130+  8077 45 6C 20 6A  WINNER_MESSAGE:          DB "El jugador X ha ganado!", 0
+130+  807B 75 67 61 64
+130+  807F 6F 72 20 58
+130+  8083 20 68 61 20
+130+  8087 67 61 6E 61
+130+  808B 64 6F 21 00
+131+  808F 48 61 62 65  EMPATE_MESSAGE:          DB "Habeis quedado en empate!", 0
+131+  8093 69 73 20 71
+131+  8097 75 65 64 61
+131+  809B 64 6F 20 65
+131+  809F 6E 20 65 6D
+131+  80A3 70 61 74 65
+131+  80A7 21 00
+132+  80A9
+133+  80A9              ; ============================================================================================
+134+  80A9              ; 6. RECURSOS GRÁFICOS (MATRICES 8x8)
+135+  80A9              ; ============================================================================================
+136+  80A9              ; 6.1. Bloques Sólidos/Vacíos (para borrar o rellenar)
+137+  80A9              MATRIZ_SOLIDA_8x8:
+138+  80A9 FF FF FF FF      DB %11111111, %11111111, %11111111, %11111111, %11111111, %11111111, %11111111, %11111111
+138+  80AD FF FF FF FF
+139+  80B1              MATRIZ_NEGRA_8x8:
+140+  80B1 00 00 00 00      DB %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000
+140+  80B5 00 00 00 00
+141+  80B9              ; Usada por ERASE_PREVIEW para borrar la ficha flotante
+142+  80B9              MATRIZ_CIRCULO_PERMUTACIONES: ; Matriz vacía (alias de MATRIZ_NEGRA_8x8)
+143+  80B9 00 00 00 00      DB %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000
+143+  80BD 00 00 00 00
+144+  80C1
+145+  80C1              ; 6.2. Huecos del Tablero (Círculo VACÍO)
+146+  80C1              MATRIZ_CIRCULO_ARRIBA_IZQUIERDA:
+147+  80C1 F8 E0 C0 80      DB %11111000, %11100000, %11000000, %10000000, %10000000, %00000000, %00000000, %00000000
+147+  80C5 80 00 00 00
+148+  80C9              MATRIZ_CIRCULO_ARRIBA_DERECHA:
+149+  80C9 1F 07 03 01      DB %00011111, %00000111, %00000011, %00000001, %00000001, %00000000, %00000000, %00000000
+149+  80CD 01 00 00 00
+150+  80D1              MATRIZ_CIRCULO_ABAJO_IZQUIERDA:
+151+  80D1 00 00 00 80      DB %00000000, %00000000, %00000000, %10000000, %10000000, %11000000, %11100000, %11111000
+151+  80D5 80 C0 E0 F8
+152+  80D9              MATRIZ_CIRCULO_ABAJO_DERECHA:
+153+  80D9 00 00 00 01      DB %00000000, %00000000, %00000000, %00000001, %00000001, %00000011, %00000111, %00011111
+153+  80DD 01 03 07 1F
+154+  80E1
+155+  80E1              ; 6.3. Fichas de Jugador (Círculo RELLENO)
+156+  80E1              ; (Usado por 'fichas.asm' para portada y juego)
+157+  80E1              MATRIZ_CIRCULO_ARRIBA_IZQUIERDA_FICHA:
+158+  80E1 07 1F 3F 7F      DB %00000111, %00011111, %00111111, %01111111, %01111111, %11111111, %11111111, %11111111
+158+  80E5 7F FF FF FF
+159+  80E9              MATRIZ_CIRCULO_ARRIBA_DERECHA_FICHA:
+160+  80E9 E0 F8 FC FE      DB %11100000, %11111000, %11111100, %11111110, %11111110, %11111111, %11111111, %11111111
+160+  80ED FE FF FF FF
+161+  80F1              MATRIZ_CIRCULO_ABAJO_IZQUIERDA_FICHA:
+162+  80F1 FF FF FF 7F      DB %11111111, %11111111, %11111111, %01111111, %01111111, %00111111, %00011111, %00000111
+162+  80F5 7F 3F 1F 07
+163+  80F9              MATRIZ_CIRCULO_ABAJO_DERECHA_FICHA:
+164+  80F9 FF FF FF FE      DB %11111111, %11111111, %11111111, %11111110, %11111110, %11111100, %11111000, %11100000
+164+  80FD FE FC F8 E0
+165+  8101
+# file closed: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\data/constants.asm
+ 29   8101                  INCLUDE "data/variables.asm"
+# file opened: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\data/variables.asm
+  1+  8101              ; ============================================================================================
+  2+  8101              ; ARCHIVO: variables.asm
+  3+  8101              ; USO: Define el espacio en memoria para variables MUTABLES (que cambian)
+  4+  8101              ;      para el estado del juego Conecta 3.
+  5+  8101              ; ============================================================================================
+  6+  8101
+  7+  8101              ; ============================================================================================
+  8+  8101              ; 1. BUFFERS DE TEXTO
+  9+  8101              ; ============================================================================================
+ 10+  8101              ; Buffer de 2 bytes para el eco de S/N en common.asm (1 char + 0 terminador)
+ 11+  8101 00 00        MESSAGE_KEY_SN:          DB 0, 0
+ 12+  8103
+ 13+  8103              ; ============================================================================================
+ 14+  8103              ; 2. ESTADO DEL JUEGO (GAME STATE)
+ 15+  8103              ; ============================================================================================
+ 16+  8103 00           GUARDAR_JUGADOR_ACTUAL:  DB 0           ; Jugador activo (1=P1, 2=P2, 3=P3)
+ 17+  8104 00           CURRENT_ROW:             DB 0           ; Fila (0-5) seleccionada para la ficha flotante
+ 18+  8105 00           PREVIOUS_ROW:            DB 0           ; Fila (0-5) en el frame anterior (para evitar parpadeo)
+ 19+  8106 00           TOTAL_FICHAS_PUESTAS:    DB 0           ; Contador de fichas (0-42) para detectar empate
+ 20+  8107
+ 21+  8107              ; --- Variables para la comprobación de victoria ---
+ 22+  8107 00           LAST_ROW:                DB 0           ; Fila (0-5) de la última ficha colocada
+ 23+  8108 00           LAST_COL:                DB 0           ; Columna (0-6) de la última ficha colocada
+ 24+  8109
+ 25+  8109              ; --- Temporizador de Cooldown ---
+ 26+  8109              ; DW (Define Word) = 16 bits (0-65535)
+ 27+  8109              ; Se usa en keyboard.asm para el retraso de movimiento ARRIBA/ABAJO
+ 28+  8109 00 00        MOVE_COOLDOWN_TIMER:     DW 0
+ 29+  810B
+ 30+  810B              ; --- Estado de Fin de Juego ---
+ 31+  810B              ; (0 = Juego en curso o Empate, 1 = Gana P1, 2 = Gana P2, 3 = Gana P3)
+ 32+  810B 00           GAME_OVER_REASON:        DB 0
+ 33+  810C
+ 34+  810C              ; --- Tablero Lógico ---
+ 35+  810C              ; Define 42 bytes (6 filas * 7 columnas) de memoria, todos inicializados a 0.
+ 36+  810C              BOARD_ARRAY:
+ 37+  810C 00 00 00 00      DEFB 0,0,0,0,0,0,0   ; Fila 0
+ 37+  8110 00 00 00
+ 38+  8113 00 00 00 00      DEFB 0,0,0,0,0,0,0   ; Fila 1
+ 38+  8117 00 00 00
+ 39+  811A 00 00 00 00      DEFB 0,0,0,0,0,0,0   ; Fila 2
+ 39+  811E 00 00 00
+ 40+  8121 00 00 00 00      DEFB 0,0,0,0,0,0,0   ; Fila 3
+ 40+  8125 00 00 00
+ 41+  8128 00 00 00 00      DEFB 0,0,0,0,0,0,0   ; Fila 4
+ 41+  812C 00 00 00
+ 42+  812F 00 00 00 00      DEFB 0,0,0,0,0,0,0   ; Fila 5
+ 42+  8133 00 00 00
+ 43+  8136
+ 44+  8136              ; --- Máscaras de teclado por puerto (ver mapa en constants.asm) ---
+ 45+  8136              ; P1
+ 46+  8136              KEY_MASK_P1_UP    EQU %00000001   ; Q  -> puerto $FBFE, bit D0
+ 47+  8136              KEY_MASK_P1_DOWN  EQU %00000001   ; A  -> puerto $FDFE, bit D0
+ 48+  8136              KEY_MASK_P1_CF    EQU %00000010   ; Z  -> puerto $FEFE, bit D1
+ 49+  8136              ; P2
+ 50+  8136              KEY_MASK_P2_UP    EQU %00000001   ; P  -> puerto $DFFE, bit D0
+ 51+  8136              KEY_MASK_P2_DOWN  EQU %00000010   ; L  -> puerto $BFFE, bit D1
+ 52+  8136              KEY_MASK_P2_CF    EQU %00000001   ; Enter -> puerto $BFFE, bit D0
+ 53+  8136              ; P3
+ 54+  8136              KEY_MASK_P3_UP    EQU %00001000   ; 7  -> puerto $EFFE, bit D3
+ 55+  8136              KEY_MASK_P3_DOWN  EQU %00000100   ; 8  -> puerto $EFFE, bit D2
+ 56+  8136              KEY_MASK_P3_CF    EQU %00010000   ; 6  -> puerto $EFFE, bit D4
+ 57+  8136
+# file closed: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\data/variables.asm
+ 30   8136
+ 31   8136              ; ----------------------------------------------
+ 32   8136              ; 2. Lógica del Juego
+ 33   8136              ; ----------------------------------------------
+ 34   8136                  INCLUDE "game/input.asm"
+# file opened: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\game/input.asm
+  1+  8136              ; ============================================================================================
+  2+  8136              ; ARCHIVO: input.asm
+  3+  8136              ; USO: Lógica principal del juego (Conecta 3 - Convocatoria Extraordinaria).
+  4+  8136              ;      Gestiona la inicialización, el movimiento vertical de la ficha del jugador,
+  5+  8136              ;      la animación de deslizamiento horizontal y la lógica de turnos, victorias y empates.
+  6+  8136              ;
+  7+  8136              ;      Mecánica: El jugador selecciona una FILA (movimiento vertical).
+  8+  8136              ;                Al confirmar, la ficha desliza de izquierda a derecha hasta chocar.
+  9+  8136              ; ============================================================================================
+ 10+  8136
+ 11+  8136              ; ============================================================================================
+ 12+  8136              ; 1. INICIALIZACIÓN DE PARTIDA
+ 13+  8136              ; ============================================================================================
+ 14+  8136              ; --------------------------------------------------------------------------------------------
+ 15+  8136              ; INPUT_Inicializar_Teclado
+ 16+  8136              ; Prepara las variables de estado para una nueva partida.
+ 17+  8136              ; Se llama desde GAME_SCREEN antes del bucle principal de teclado.
+ 18+  8136              ;
+ 19+  8136              ; Entrada:  -
+ 20+  8136              ; Salida:   Variables de estado limpias, preview de P1 dibujada en fila 0
+ 21+  8136              ; Modifica: AF, BC, DE, HL (preservados con PUSH/POP)
+ 22+  8136              ; --------------------------------------------------------------------------------------------
+ 23+  8136              INPUT_Inicializar_Teclado:
+ 24+  8136 F5               PUSH AF
+ 24+  8137 C5             PUSH BC
+ 24+  8138 D5             PUSH DE
+ 24+  8139 E5             PUSH HL
+ 25+  813A
+ 26+  813A AF               XOR A
+ 27+  813B 32 06 81         LD (TOTAL_FICHAS_PUESTAS), A    ; Reiniciar contador de fichas
+ 28+  813E 32 04 81         LD (CURRENT_ROW), A             ; Ficha flotante empieza en fila 0
+ 29+  8141 32 0B 81         LD (GAME_OVER_REASON), A        ; 0 = en curso
+ 30+  8144
+ 31+  8144 3E 01            LD A, PLAYER_1
+ 32+  8146 32 03 81         LD (GUARDAR_JUGADOR_ACTUAL), A
+ 33+  8149
+ 34+  8149 CD 51 81         CALL DIBUJAR_FICHA_JUGADOR      ; Dibujar preview de P1
+ 35+  814C
+ 36+  814C E1               POP HL
+ 36+  814D D1             POP DE
+ 36+  814E C1             POP BC
+ 36+  814F F1             POP AF
+ 37+  8150 C9               RET
+ 38+  8151
+ 39+  8151              ; ============================================================================================
+ 40+  8151              ; 2. GESTIÓN VISUAL DE LA FICHA FLOTANTE (PREVIEW)
+ 41+  8151              ; ============================================================================================
+ 42+  8151              ; --------------------------------------------------------------------------------------------
+ 43+  8151              ; DIBUJAR_FICHA_JUGADOR
+ 44+  8151              ; Dibuja la ficha de preview del jugador activo en el lado IZQUIERDO del tablero,
+ 45+  8151              ; a la altura de la fila seleccionada (CURRENT_ROW).
+ 46+  8151              ;
+ 47+  8151              ; Entrada:  (CURRENT_ROW)            - fila seleccionada (0-5)
+ 48+  8151              ;           (GUARDAR_JUGADOR_ACTUAL) - jugador activo (1, 2 o 3)
+ 49+  8151              ; Salida:   Ficha de 16×16 dibujada en (Y = ROW*3+4,  X = 2)
+ 50+  8151              ; Modifica: AF, BC, DE, HL (preservados)
+ 51+  8151              ; --------------------------------------------------------------------------------------------
+ 52+  8151              DIBUJAR_FICHA_JUGADOR:
+ 53+  8151 F5               PUSH AF
+ 53+  8152 C5             PUSH BC
+ 53+  8153 D5             PUSH DE
+ 53+  8154 E5             PUSH HL
+ 54+  8155
+ 55+  8155                  ; Y = CURRENT_ROW * 3 + 4
+ 56+  8155 3A 04 81         LD A, (CURRENT_ROW)
+ 57+  8158 4F               LD C, A
+ 58+  8159 87               ADD A, A              ; A = ROW * 2
+ 59+  815A 81               ADD A, C              ; A = ROW * 3
+ 60+  815B C6 04            ADD A, 4              ; A = ROW * 3 + 4
+ 61+  815D 67               LD H, A               ; H = coordenada Y
+ 62+  815E
+ 63+  815E 2E 00            LD L, 0               ; L = X fijo (fuera del tablero: board empieza en L=3)
+ 64+  8160
+ 65+  8160                  ; Color: lookup en tabla PLAYER_COLORS (índice = jugador - 1)
+ 66+  8160 3A 03 81         LD A, (GUARDAR_JUGADOR_ACTUAL)
+ 67+  8163 3D               DEC A                 ; 1->0, 2->1, 3->2
+ 68+  8164 E5               PUSH HL               ; preservar (Y, X)
+ 69+  8165 4F               LD C, A
+ 70+  8166 06 00            LD B, 0
+ 71+  8168 21 0C 80         LD HL, PLAYER_COLORS
+ 72+  816B 09               ADD HL, BC
+ 73+  816C 7E               LD A, (HL)            ; A = atributo del jugador actual
+ 74+  816D E1               POP HL                ; restaurar (H=Y, L=X)
+ 75+  816E
+ 76+  816E CD 4E 83         CALL FICHAS_PintarFicha_AjustadaTablero
+ 77+  8171
+ 78+  8171 E1               POP HL
+ 78+  8172 D1             POP DE
+ 78+  8173 C1             POP BC
+ 78+  8174 F1             POP AF
+ 79+  8175 C9               RET
+ 80+  8176
+ 81+  8176              ; --------------------------------------------------------------------------------------------
+ 82+  8176              ; ERASE_PREVIEW
+ 83+  8176              ; Borra la ficha de preview del lado izquierdo del tablero.
+ 84+  8176              ; Las coordenadas son IDÉNTICAS a las de DIBUJAR_FICHA_JUGADOR.
+ 85+  8176              ;
+ 86+  8176              ; Entrada:  (CURRENT_ROW) - fila que se va a borrar
+ 87+  8176              ; Salida:   Ficha de 16×16 borrada (píxeles y atributo a 0)
+ 88+  8176              ; Modifica: AF, BC, DE, HL (preservados)
+ 89+  8176              ; --------------------------------------------------------------------------------------------
+ 90+  8176              ERASE_PREVIEW:
+ 91+  8176 F5               PUSH AF
+ 91+  8177 C5             PUSH BC
+ 91+  8178 D5             PUSH DE
+ 91+  8179 E5             PUSH HL
+ 92+  817A
+ 93+  817A 3A 04 81         LD A, (CURRENT_ROW)
+ 94+  817D 4F               LD C, A
+ 95+  817E 87               ADD A, A
+ 96+  817F 81               ADD A, C
+ 97+  8180 C6 04            ADD A, 4
+ 98+  8182 67               LD H, A               ; H = Y = ROW * 3 + 4
+ 99+  8183 2E 00            LD L, 0               ; L = X = 0 (fijo, fuera del tablero azul)
+100+  8185
+101+  8185 AF               XOR A
+102+  8186 DD 21 B9 80      LD IX, MATRIZ_CIRCULO_PERMUTACIONES
+103+  818A
+104+  818A CD FE 82         CALL FICHAS_PintarMatriz8x8     ; Arriba-Izquierda
+105+  818D 2C               INC L
+106+  818E CD FE 82         CALL FICHAS_PintarMatriz8x8     ; Arriba-Derecha
+107+  8191 24               INC H
+108+  8192 CD FE 82         CALL FICHAS_PintarMatriz8x8     ; Abajo-Derecha
+109+  8195 2D               DEC L
+110+  8196 CD FE 82         CALL FICHAS_PintarMatriz8x8     ; Abajo-Izquierda
+111+  8199
+112+  8199 E1               POP HL
+112+  819A D1             POP DE
+112+  819B C1             POP BC
+112+  819C F1             POP AF
+113+  819D C9               RET
+114+  819E
+115+  819E              ; --------------------------------------------------------------------------------------------
+116+  819E              ; ERASE_FICHA_16x16
+117+  819E              ; Rutina genérica para borrar una ficha de 16×16 en cualquier coordenada (H, L).
+118+  819E              ; Mantenida como utilidad para uso externo.
+119+  819E              ;
+120+  819E              ; Entrada:  H = fila char, L = columna char
+121+  819E              ; Salida:   Ficha de 16×16 borrada
+122+  819E              ; Modifica: AF, HL, IX (preservados)
+123+  819E              ; --------------------------------------------------------------------------------------------
+124+  819E              ERASE_FICHA_16x16:
+125+  819E F5               PUSH AF
+125+  819F E5             PUSH HL
+125+  81A0 DD E5          PUSH IX
+126+  81A2
+127+  81A2 AF               XOR A
+128+  81A3 DD 21 B9 80      LD IX, MATRIZ_CIRCULO_PERMUTACIONES
+129+  81A7
+130+  81A7 CD FE 82         CALL FICHAS_PintarMatriz8x8
+131+  81AA 2C               INC L
+132+  81AB CD FE 82         CALL FICHAS_PintarMatriz8x8
+133+  81AE 24               INC H
+134+  81AF CD FE 82         CALL FICHAS_PintarMatriz8x8
+135+  81B2 2D               DEC L
+136+  81B3 CD FE 82         CALL FICHAS_PintarMatriz8x8
+137+  81B6
+138+  81B6 DD E1            POP IX
+138+  81B8 E1             POP HL
+138+  81B9 F1             POP AF
+139+  81BA C9               RET
+140+  81BB
+141+  81BB              ; ============================================================================================
+142+  81BB              ; 3. LÓGICA PRINCIPAL DE JUEGO (COLOCACIÓN Y TURNOS)
+143+  81BB              ; ============================================================================================
+144+  81BB              ; --------------------------------------------------------------------------------------------
+145+  81BB              ; COLOCAR_FICHA_EN_TABLERO
+146+  81BB              ; Se llama al pulsar CONFIRM. Gestiona toda la lógica de un turno:
+147+  81BB              ;   1. Busca la columna vacía más a la DERECHA en CURRENT_ROW (gravedad horizontal).
+148+  81BB              ;   2. Si la fila está llena, muestra aviso visual y retorna sin hacer nada.
+149+  81BB              ;   3. Guarda (LAST_ROW, LAST_COL) y actualiza BOARD_ARRAY.
+150+  81BB              ;   4. Anima el deslizamiento izquierda -> derecha (X += 4 por columna).
+151+  81BB              ;   5. Comprueba victoria (CHECK_WIN) o empate (42 fichas).
+152+  81BB              ;   6. Avanza jugador: 1 -> 2 -> 3 -> 1.
+153+  81BB              ;
+154+  81BB              ; Entrada:  (CURRENT_ROW), (GUARDAR_JUGADOR_ACTUAL)
+155+  81BB              ; Salida:   Estado actualizado. JP a GAME_End si fin de partida, RET si continúa.
+156+  81BB              ; Modifica: AF, BC, DE, HL (preservados)
+157+  81BB              ; Carry:    Solo uso interno (vía CHECK_WIN)
+158+  81BB              ; --------------------------------------------------------------------------------------------
+159+  81BB              COLOCAR_FICHA_EN_TABLERO:
+160+  81BB F5               PUSH AF
+160+  81BC C5             PUSH BC
+160+  81BD D5             PUSH DE
+160+  81BE E5             PUSH HL
+161+  81BF
+162+  81BF                  ; ======================================================
+163+  81BF                  ; 1. BUSCAR COLUMNA VACÍA (EMPEZANDO POR LA DERECHA)
+164+  81BF                  ; ======================================================
+165+  81BF                  ; La fila buscada es CURRENT_ROW (fija). Iteramos columnas 6 -> 0.
+166+  81BF                  ; Dirección de celda: BOARD_ARRAY + (CURRENT_ROW * 7) + columna
+167+  81BF
+168+  81BF 06 06            LD B, BOARD_COLS - 1  ; B = 6 (columna más a la derecha = "fondo" horizontal)
+169+  81C1
+170+  81C1              .BUSCAR_COLUMNA_LIBRE_LOOP:
+171+  81C1                  ; Calcular índice en cada iteración (CURRENT_ROW puede leerse desde memoria)
+172+  81C1 3A 04 81         LD A, (CURRENT_ROW)
+173+  81C4 4F               LD C, A
+174+  81C5 CB 27            SLA A
+174+  81C7 CB 27          SLA A
+174+  81C9 CB 27          SLA A   ; A = ROW * 8
+175+  81CB 91               SUB C                  ; A = ROW * 7
+176+  81CC 80               ADD A, B               ; A = (ROW * 7) + columna_actual
+177+  81CD 5F               LD E, A
+178+  81CE 16 00            LD D, 0
+179+  81D0 21 0C 81         LD HL, BOARD_ARRAY
+180+  81D3 19               ADD HL, DE             ; HL -> BOARD_ARRAY[ROW][B]
+181+  81D4
+182+  81D4 7E               LD A, (HL)
+183+  81D5 B7               OR A                   ; ¿Vacía?
+184+  81D6 28 0C            JR Z, .CELDA_ENCONTRADA
+185+  81D8
+186+  81D8 05               DEC B
+187+  81D9 F2 C1 81         JP P, .BUSCAR_COLUMNA_LIBRE_LOOP  ; Si B >= 0, seguir
+188+  81DC
+189+  81DC                  ; Fila llena: aviso y retornar
+190+  81DC CD 2F 85         CALL UTIL_VISUAL_ERROR_FULL_ROW
+191+  81DF E1               POP HL
+191+  81E0 D1             POP DE
+191+  81E1 C1             POP BC
+191+  81E2 F1             POP AF
+192+  81E3 C9               RET
+193+  81E4
+194+  81E4              .CELDA_ENCONTRADA:
+195+  81E4                  ; ======================================================
+196+  81E4                  ; 2. ACTUALIZAR ESTADO
+197+  81E4                  ; ======================================================
+198+  81E4                  ; B = columna encontrada (0-6), HL = dirección de la celda
+199+  81E4 3A 04 81         LD A, (CURRENT_ROW)
+200+  81E7 32 07 81         LD (LAST_ROW), A      ; Guardar fila de la jugada
+201+  81EA 78               LD A, B
+202+  81EB 32 08 81         LD (LAST_COL), A      ; Guardar columna de la jugada
+203+  81EE
+204+  81EE 3A 03 81         LD A, (GUARDAR_JUGADOR_ACTUAL)
+205+  81F1 77               LD (HL), A            ; Escribir jugador en BOARD_ARRAY
+206+  81F2
+207+  81F2                  ; ======================================================
+208+  81F2                  ; 3. ANIMACIÓN DE DESLIZAMIENTO (IZQ -> DER)
+209+  81F2                  ; ======================================================
+210+  81F2                  ; 3.1. Obtener color del jugador sobre fondo azul (para pintar sobre tablero)
+211+  81F2                  ;      Lookup en PLAYER_COLORS_BOARD, índice = jugador - 1
+212+  81F2 3A 03 81         LD A, (GUARDAR_JUGADOR_ACTUAL)
+213+  81F5 3D               DEC A
+214+  81F6 4F               LD C, A
+215+  81F7 06 00            LD B, 0
+216+  81F9 21 0F 80         LD HL, PLAYER_COLORS_BOARD
+217+  81FC 09               ADD HL, BC
+218+  81FD 7E               LD A, (HL)            ; A = color sobre tablero azul
+219+  81FE
+220+  81FE F5               PUSH AF               ; Guardar color para el bucle
+221+  81FF
+222+  81FF                  ; 3.2. Y fija = CURRENT_ROW * 3 + 4
+223+  81FF 3A 04 81         LD A, (CURRENT_ROW)
+224+  8202 4F               LD C, A
+225+  8203 87               ADD A, A
+226+  8204 81               ADD A, C
+227+  8205 C6 04            ADD A, 4
+228+  8207 67               LD H, A               ; H = Y (fija durante toda la animación)
+229+  8208
+230+  8208                  ; 3.3. X_final = LAST_COL * 4 + 4
+231+  8208 3A 08 81         LD A, (LAST_COL)
+232+  820B CB 27            SLA A
+233+  820D CB 27            SLA A                 ; A = COL * 4
+234+  820F C6 04            ADD A, 4
+235+  8211 57               LD D, A               ; D = X_final
+236+  8212
+237+  8212 1E 04            LD E, 4               ; E = X_actual, empieza en la columna 0 del tablero (X=4)
+238+  8214
+239+  8214              .ANIMATION_LOOP:
+240+  8214                  ; A. Dibujar ficha en (H=Y, L=X_actual)
+241+  8214 6B               LD L, E
+242+  8215 F1               POP AF
+243+  8216 F5               PUSH AF
+244+  8217 CD 4E 83         CALL FICHAS_PintarFicha_AjustadaTablero
+245+  821A
+246+  821A                  ; B. Pausa
+247+  821A 01 7C 15         LD BC, DROP_ANIM_DELAY
+248+  821D CD 4F 85         CALL UTIL_Pausar
+249+  8220
+250+  8220                  ; C. ¿Llegamos al destino?
+251+  8220 7B               LD A, E
+252+  8221 BA               CP D
+253+  8222 28 0C            JR Z, .SKIP_ERASE_AND_FINISH
+254+  8224
+255+  8224                  ; D. Borrar (redibujar hueco negro) y avanzar
+256+  8224 6B               LD L, E
+257+  8225 3E 08            LD A, COLOR_INK_NEGRO + COLOR_PAPER_AZUL
+258+  8227 CD 4E 83         CALL FICHAS_PintarFicha_AjustadaTablero
+259+  822A
+260+  822A 7B               LD A, E
+261+  822B C6 04            ADD A, 4              ; Siguiente columna lógica (+4 chars)
+262+  822D 5F               LD E, A
+263+  822E 18 E4            JR .ANIMATION_LOOP
+264+  8230
+265+  8230              .SKIP_ERASE_AND_FINISH:
+266+  8230 F1               POP AF                ; Limpiar color del stack
+267+  8231
+268+  8231                  ; ======================================================
+269+  8231                  ; 4. VERIFICAR VICTORIA
+270+  8231                  ; ======================================================
+271+  8231 CD 6F 82         CALL CHECK_WIN
+272+  8234 38 1B            JR C, .FIN_POR_VICTORIA
+273+  8236
+274+  8236                  ; ======================================================
+275+  8236                  ; 5. VERIFICAR EMPATE
+276+  8236                  ; ======================================================
+277+  8236 21 06 81         LD HL, TOTAL_FICHAS_PUESTAS
+278+  8239 34               INC (HL)
+279+  823A 7E               LD A, (HL)
+280+  823B FE 2A            CP 42
+281+  823D 28 1F            JR Z, .FIN_POR_EMPATE
+282+  823F
+283+  823F                  ; ======================================================
+284+  823F                  ; 6. CAMBIAR DE JUGADOR: 1 -> 2 -> 3 -> 1
+285+  823F                  ; ======================================================
+286+  823F 3A 03 81         LD A, (GUARDAR_JUGADOR_ACTUAL)
+287+  8242 3C               INC A
+288+  8243 FE 04            CP PLAYER_3 + 1       ; ¿Llegó a 4?
+289+  8245 20 02            JR NZ, .NO_WRAP
+290+  8247 3E 01            LD A, PLAYER_1        ; Volver al jugador 1
+291+  8249              .NO_WRAP:
+292+  8249 32 03 81         LD (GUARDAR_JUGADOR_ACTUAL), A
+293+  824C
+294+  824C E1               POP HL
+294+  824D D1             POP DE
+294+  824E C1             POP BC
+294+  824F F1             POP AF
+295+  8250 C9               RET
+296+  8251
+297+  8251              .FIN_POR_VICTORIA:
+298+  8251 3A 03 81         LD A, (GUARDAR_JUGADOR_ACTUAL)
+299+  8254 32 0B 81         LD (GAME_OVER_REASON), A
+300+  8257 E1               POP HL
+300+  8258 D1             POP DE
+300+  8259 C1             POP BC
+300+  825A F1             POP AF
+301+  825B C3 69 82         JP GAME_End
+302+  825E
+303+  825E              .FIN_POR_EMPATE:
+304+  825E AF               XOR A
+305+  825F 32 0B 81         LD (GAME_OVER_REASON), A
+306+  8262 E1               POP HL
+306+  8263 D1             POP DE
+306+  8264 C1             POP BC
+306+  8265 F1             POP AF
+307+  8266 C3 69 82         JP GAME_End
+308+  8269
+309+  8269              ; ============================================================================================
+310+  8269              ; 4. FINALIZACIÓN
+311+  8269              ; ============================================================================================
+312+  8269              ; --------------------------------------------------------------------------------------------
+313+  8269              ; GAME_End
+314+  8269              ; Limpieza visual antes de saltar a la pantalla de resultados.
+315+  8269              ;
+316+  8269              ; Entrada:  -
+317+  8269              ; Salida:   JP a END_SCREEN (no retorna)
+318+  8269              ; --------------------------------------------------------------------------------------------
+319+  8269              GAME_End:
+320+  8269 CD 76 81         CALL ERASE_PREVIEW
+321+  826C C3 20 8B         JP END_SCREEN
+322+  826F
+# file closed: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\game/input.asm
+ 35   826F                  INCLUDE "game/logic.asm"
+# file opened: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\game/logic.asm
+  1+  826F              ; ============================================================================================
+  2+  826F              ; ARCHIVO: logic.asm
+  3+  826F              ; USO: Lógica de comprobación de victoria para Conecta 3.
+  4+  826F              ;      Detecta WIN_LENGTH (= 3) fichas consecutivas en cualquier dirección.
+  5+  826F              ;
+  6+  826F              ;      OJO: Se llama desde 'input.asm' después de cada turno.
+  7+  826F              ; ============================================================================================
+  8+  826F
+  9+  826F              ; ============================================================================================
+ 10+  826F              ; RUTINA PRINCIPAL: CHECK_WIN
+ 11+  826F              ; ============================================================================================
+ 12+  826F              ; USO:
+ 13+  826F              ;   Comprueba si la última jugada (almacenada en LAST_ROW, LAST_COL)
+ 14+  826F              ;   ha resultado en una victoria para el jugador actual (GUARDAR_JUGADOR_ACTUAL).
+ 15+  826F              ;
+ 16+  826F              ; ENTRADA:
+ 17+  826F              ;   (Implícita) (LAST_ROW), (LAST_COL) -> Coordenadas de la última ficha.
+ 18+  826F              ;   (Implícita) (GUARDAR_JUGADOR_ACTUAL) -> Jugador que acaba de mover.
+ 19+  826F              ;
+ 20+  826F              ; SALIDA:
+ 21+  826F              ;   Carry Flag (C) = 1 (SCF) SI HAY VICTORIA
+ 22+  826F              ;   Carry Flag (C) = 0 (OR A) SI NO HAY VICTORIA
+ 23+  826F              ; --------------------------------------------------------------------------------------------
+ 24+  826F              CHECK_WIN:
+ 25+  826F C5               PUSH BC
+ 25+  8270 D5             PUSH DE
+ 25+  8271 E5             PUSH HL  ; Preservar registros
+ 26+  8272
+ 27+  8272                  ; 1. Comprobar HORIZONTAL
+ 28+  8272                  ;    (Fila fija, Columna se mueve +/- 1)
+ 29+  8272 16 00            LD D, 0                     ; Delta Fila = 0
+ 30+  8274 1E 01            LD E, 1                     ; Delta Columna = 1
+ 31+  8276 CD A0 82         CALL CHECK_LINE
+ 32+  8279 38 20            JR C, .WIN_FOUND            ; Si Carry=1, saltar al final
+ 33+  827B
+ 34+  827B                  ; 2. Comprobar VERTICAL
+ 35+  827B                  ;    (Fila se mueve +/- 1, Columna fija)
+ 36+  827B 16 01            LD D, 1                     ; Delta Fila = 1
+ 37+  827D 1E 00            LD E, 0                     ; Delta Columna = 0
+ 38+  827F CD A0 82         CALL CHECK_LINE
+ 39+  8282 38 17            JR C, .WIN_FOUND
+ 40+  8284
+ 41+  8284                  ; 3. Comprobar DIAGONAL \
+ 42+  8284                  ;    (Fila se mueve +/- 1, Columna se mueve +/- 1)
+ 43+  8284 16 01            LD D, 1                     ; Delta Fila = 1
+ 44+  8286 1E 01            LD E, 1                     ; Delta Columna = 1
+ 45+  8288 CD A0 82         CALL CHECK_LINE
+ 46+  828B 38 0E            JR C, .WIN_FOUND
+ 47+  828D
+ 48+  828D                  ; 4. Comprobar DIAGONAL /
+ 49+  828D                  ;    (Fila se mueve +/- 1, Columna se mueve -/+ 1)
+ 50+  828D 16 01            LD D, 1                     ; Delta Fila = 1
+ 51+  828F 1E FF            LD E, -1                    ; Delta Columna = -1 (255 en complemento a 2)
+ 52+  8291 CD A0 82         CALL CHECK_LINE
+ 53+  8294 38 05            JR C, .WIN_FOUND
+ 54+  8296
+ 55+  8296                  ; --- Sin victoria ---
+ 56+  8296                  ; Si llegamos aquí, ninguna comprobación activó el Carry
+ 57+  8296 B7               OR A                        ; Limpia el Carry Flag (CF=0) para indicar "No Victoria"
+ 58+  8297 E1               POP HL
+ 58+  8298 D1             POP DE
+ 58+  8299 C1             POP BC
+ 59+  829A C9               RET
+ 60+  829B
+ 61+  829B              .WIN_FOUND:
+ 62+  829B                  ; --- Victoria encontrada ---
+ 63+  829B 37               SCF                         ; Fija el Carry Flag (CF=1) para indicar "Victoria"
+ 64+  829C E1               POP HL
+ 64+  829D D1             POP DE
+ 64+  829E C1             POP BC
+ 65+  829F C9               RET
+ 66+  82A0
+ 67+  82A0              ; ============================================================================================
+ 68+  82A0              ; RUTINA AUXILIAR: CHECK_LINE
+ 69+  82A0              ; ============================================================================================
+ 70+  82A0              ; USO:
+ 71+  82A0              ;   Comprueba una línea completa (en ambas direcciones) usando un vector (D,E).
+ 72+  82A0              ;   Suma las fichas encontradas en la dirección (D,E) y la opuesta (-D,-E).
+ 73+  82A0              ;
+ 74+  82A0              ; ENTRADA:
+ 75+  82A0              ;   D = Delta Fila
+ 76+  82A0              ;   E = Delta Columna
+ 77+  82A0              ;
+ 78+  82A0              ; SALIDA:
+ 79+  82A0              ;   Carry Flag = 1 si la suma total (dir_1 + dir_2 + ficha_central) >= WIN_LENGTH (3)
+ 80+  82A0              ;   Carry Flag = 0 si no
+ 81+  82A0              ; --------------------------------------------------------------------------------------------
+ 82+  82A0              CHECK_LINE:
+ 83+  82A0 D5               PUSH DE                     ; Guardamos los deltas originales (D, E)
+ 84+  82A1
+ 85+  82A1                  ; 1. Contar en la primera dirección (D, E)
+ 86+  82A1 CD BD 82         CALL COUNT_CONSECUTIVE
+ 87+  82A4 47               LD B, A                     ; B = Número de fichas encontradas en la primera dirección
+ 88+  82A5
+ 89+  82A5                  ; 2. Invertir la dirección para comprobar el lado opuesto
+ 90+  82A5 D1               POP DE                      ; Recuperamos los deltas originales (D, E)
+ 91+  82A6 7A               LD A, D
+ 92+  82A7 ED 44            NEG                         ; A = -D (Invierte el delta de fila)
+ 93+  82A9 57               LD D, A
+ 94+  82AA 7B               LD A, E
+ 95+  82AB ED 44            NEG                         ; A = -E (Invierte el delta de columna)
+ 96+  82AD 5F               LD E, A
+ 97+  82AE
+ 98+  82AE                  ; 3. Contar en la dirección opuesta (-D, -E)
+ 99+  82AE C5               PUSH BC                     ; Guardamos la primera cuenta (B)
+100+  82AF CD BD 82         CALL COUNT_CONSECUTIVE
+101+  82B2 C1               POP BC                      ; Recuperamos la primera cuenta (B)
+102+  82B3
+103+  82B3                  ; 4. Sumar resultados
+104+  82B3 80               ADD A, B                    ; A = (Cuenta Dir 1) + (Cuenta Dir 2)
+105+  82B4 3C               INC A                       ; Sumar 1 (la ficha central que acabamos de poner)
+106+  82B5
+107+  82B5                  ; 5. Comprobar si hay WIN_LENGTH o más en raya
+108+  82B5 FE 03            CP WIN_LENGTH               ; ¿Es el total (A) >= WIN_LENGTH (= 3)?
+109+  82B7 30 02            JR NC, .LINE_WIN            ; Si A >= WIN_LENGTH (No Carry), es victoria
+110+  82B9
+111+  82B9 B7               OR A                        ; No hay victoria en esta línea, CF = 0
+112+  82BA C9               RET
+113+  82BB              .LINE_WIN:
+114+  82BB 37               SCF                         ; ¡Victoria en esta línea! CF = 1
+115+  82BC C9               RET
+116+  82BD
+117+  82BD              ; ============================================================================================
+118+  82BD              ; RUTINA AUXILIAR: COUNT_CONSECUTIVE
+119+  82BD              ; ============================================================================================
+120+  82BD              ; USO:
+121+  82BD              ;   "Camina" desde (LAST_ROW, LAST_COL) en una dirección (D,E) y cuenta
+122+  82BD              ;   cuántas fichas consecutivas pertenecen al jugador actual.
+123+  82BD              ;
+124+  82BD              ; ENTRADA:
+125+  82BD              ;   D = Delta Fila
+126+  82BD              ;   E = Delta Columna
+127+  82BD              ;   (Implícita) (LAST_ROW), (LAST_COL), (GUARDAR_JUGADOR_ACTUAL)
+128+  82BD              ;
+129+  82BD              ; SALIDA:
+130+  82BD              ;   A = Número de fichas idénticas consecutivas (sin contar la inicial)
+131+  82BD              ; --------------------------------------------------------------------------------------------
+132+  82BD              COUNT_CONSECUTIVE:
+133+  82BD C5               PUSH BC
+133+  82BE D5             PUSH DE
+133+  82BF E5             PUSH HL
+134+  82C0 06 00            LD B, 0                     ; B = Contador de aciertos (empieza en 0)
+135+  82C2
+136+  82C2                  ; Cargar posición inicial de la ficha que acabamos de poner
+137+  82C2 3A 07 81         LD A, (LAST_ROW)
+138+  82C5 67               LD H, A                     ; H = Fila actual
+139+  82C6 3A 08 81         LD A, (LAST_COL)
+140+  82C9 6F               LD L, A                     ; L = Columna actual
+141+  82CA
+142+  82CA              .LOOP_COUNT:
+143+  82CA                  ; --- 1. Mover a la siguiente celda ---
+144+  82CA 7C               LD A, H
+145+  82CB 82               ADD A, D                    ; H = H + Delta Fila
+146+  82CC 67               LD H, A
+147+  82CD 7D               LD A, L
+148+  82CE 83               ADD A, E                    ; L = L + Delta Columna
+149+  82CF 6F               LD L, A
+150+  82D0
+151+  82D0                  ; --- 2. VALIDAR LÍMITES DEL TABLERO ---
+152+  82D0                  ; Verificar Fila (H debe estar entre 0 y 5)
+153+  82D0 7C               LD A, H
+154+  82D1 FE 06            CP 6                        ; Compara H con 6
+155+  82D3 30 24            JR NC, .END_COUNT           ; Si H >= 6 (o < 0, que es >127), está fuera de rango.
+156+  82D5
+157+  82D5                  ; Verificar Columna (L debe estar entre 0 y 6)
+158+  82D5 7D               LD A, L
+159+  82D6 FE 07            CP 7                        ; Compara L con 7
+160+  82D8 30 1F            JR NC, .END_COUNT           ; Si L >= 7 (o < 0), está fuera de rango.
+161+  82DA
+162+  82DA                  ; --- 3. LEER VALOR EN TABLERO (BOARD_ARRAY) ---
+163+  82DA                  ; La celda (H, L) es válida, ahora calculamos su índice en el array 1D
+164+  82DA                  ; Índice = (H * 7) + L
+165+  82DA E5               PUSH HL
+165+  82DB D5             PUSH DE            ; Guardar H,L (coords) y D,E (deltas)
+166+  82DC
+167+  82DC 7C               LD A, H                     ; A = H (Fila)
+168+  82DD 87               ADD A, A                    ; A = H * 2
+169+  82DE 87               ADD A, A                    ; A = H * 4
+170+  82DF 57               LD D, A                     ; D = H * 4
+171+  82E0
+172+  82E0 7C               LD A, H                     ; A = H
+173+  82E1 87               ADD A, A                    ; A = H * 2
+174+  82E2 84               ADD A, H                    ; A = H * 3
+175+  82E3
+176+  82E3 82               ADD A, D                    ; A = (H * 3) + (H * 4) = H * 7
+177+  82E4 85               ADD A, L                    ; A = (H * 7) + L (Índice final)
+178+  82E5
+179+  82E5 5F               LD E, A                     ; E = Índice
+180+  82E6 16 00            LD D, 0                     ; DE = Índice (16 bits)
+181+  82E8 21 0C 81         LD HL, BOARD_ARRAY
+182+  82EB 19               ADD HL, DE                  ; HL = Dirección de la celda (BOARD_ARRAY + Índice)
+183+  82EC 7E               LD A, (HL)                  ; A = Valor de la celda (0=Vacío, 1=P1, 2=P2)
+184+  82ED
+185+  82ED D1               POP DE
+185+  82EE E1             POP HL              ; Recuperar H,L y D,E
+186+  82EF
+187+  82EF                  ; --- 4. COMPARAR CON JUGADOR ACTUAL ---
+188+  82EF 4F               LD C, A                     ; Guardamos el valor de la celda en C
+189+  82F0 3A 03 81         LD A, (GUARDAR_JUGADOR_ACTUAL)
+190+  82F3 B9               CP C                        ; ¿Es la celda (C) igual a nuestro jugador (A)?
+191+  82F4 20 03            JR NZ, .END_COUNT           ; Si no coincide (es 0 o del otro jugador), parar de contar
+192+  82F6
+193+  82F6                  ; --- 5. COINCIDENCIA ---
+194+  82F6 04               INC B                       ; Coincide! --> Incrementamos contador de aciertos
+195+  82F7 18 D1            JR .LOOP_COUNT              ; Volver al bucle para comprobar la siguiente celda
+196+  82F9
+197+  82F9              .END_COUNT:
+198+  82F9 78               LD A, B                     ; Cargar el total de aciertos (B) en A para el retorno
+199+  82FA E1               POP HL
+199+  82FB D1             POP DE
+199+  82FC C1             POP BC
+200+  82FD C9               RET
+# file closed: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\game/logic.asm
+ 36   82FE
+ 37   82FE              ; ----------------------------------------------
+ 38   82FE              ; 3. Gráficos (Rutinas de dibujo)
+ 39   82FE              ; ----------------------------------------------
+ 40   82FE                  INCLUDE "graphics/fichas.asm"
+# file opened: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\graphics/fichas.asm
+  1+  82FE              ; =============================================================================================
+  2+  82FE              ; ARCHIVO: fichas.asm
+  3+  82FE              ; USO: Núcleo gráfico para dibujar las FICHAS DE JUGADOR (círculos rellenos).
+  4+  82FE              ;      Contiene la rutina de bajo nivel (8x8) y las de alto nivel (16x16).
+  5+  82FE              ; =============================================================================================
+  6+  82FE
+  7+  82FE              ; --------------------------------------------------------------------------------------------
+  8+  82FE              ; FICHAS_PintarMatriz8x8
+  9+  82FE              ; Dibuja una matriz de 8x8 píxeles (un carácter) en la pantalla.
+ 10+  82FE              ; Es la rutina gráfica de más bajo nivel.
+ 11+  82FE              ;
+ 12+  82FE              ; ENTRADA:
+ 13+  82FE              ;     HL -> Coordenadas (H = Y, L = X)
+ 14+  82FE              ;     A  -> Color del atributo (byte de color, ej: INK_ROJO + PAPER_AZUL)
+ 15+  82FE              ;     IX -> Dirección de la matriz de 8 bytes (patrón de píxeles)
+ 16+  82FE              ;
+ 17+  82FE              ; PROCESO:
+ 18+  82FE              ;     1. Calcula la dirección de atributos ($5800) y escribe el color (A).
+ 19+  82FE              ;     2. Calcula la dirección de píxeles ($4000) y la pone en HL.
+ 20+  82FE              ;     3. Entra en un bucle (B=8) que copia 8 bytes de (IX) a (HL),
+ 21+  82FE              ;        incrementando H (fila de píxeles) e IX (fuente) en cada paso.
+ 22+  82FE              ; --------------------------------------------------------------------------------------------
+ 23+  82FE              FICHAS_PintarMatriz8x8:
+ 24+  82FE C5               PUSH BC
+ 24+  82FF D5             PUSH DE
+ 24+  8300 FD E5          PUSH IY              ; Preservar registros
+ 25+  8302 F5               PUSH AF                                ; Preservar AF (el color)
+ 26+  8303
+ 27+  8303 DD E5 FD E1      LD IY, IX                              ; Guardar IX (puntero a matriz) en IY
+ 28+  8307 54 5D            LD DE, HL                              ; Guardar coordenadas (H,L) en DE
+ 29+  8309
+ 30+  8309                  ; 1. PINTAR ATRIBUTO DE COLOR
+ 31+  8309 CD 5B 84         CALL POSXY_CalcAttrAddr_5800           ; HL = dirección de atributo
+ 32+  830C 77               LD (HL), A                             ; Escribir el color en $58xx
+ 33+  830D
+ 34+  830D                  ; 2. CALCULAR POSICIÓN DE PÍXELES
+ 35+  830D 62 6B            LD HL, DE                              ; Restaurar coordenadas (H,L)
+ 36+  830F CD 24 84         CALL POSXY_CalcPixelAddr_4000          ; HL = dirección de píxel en $4xxx
+ 37+  8312
+ 38+  8312 06 08            LD B, 8                                ; Contador de 8 filas
+ 39+  8314
+ 40+  8314              ; 3. BUCLE DE DIBUJO (Copia 8 bytes de IX a HL)
+ 41+  8314              FICHAS_PaintMatrix8x8_Loop:
+ 42+  8314 DD 4E 00         LD C, (IX)                             ; C = byte del patrón de píxeles
+ 43+  8317 71               LD (HL), C                             ; Escribir el byte en la memoria de vídeo
+ 44+  8318
+ 45+  8318 DD 23            INC IX                                 ; Siguiente byte del patrón
+ 46+  831A 24               INC H                                  ; Siguiente fila de píxeles en pantalla
+ 47+  831B 05               DEC B
+ 48+  831C 20 F6            JR NZ, FICHAS_PaintMatrix8x8_Loop      ; Repetir 8 veces
+ 49+  831E
+ 50+  831E                  ; 4. RESTAURACIÓN
+ 51+  831E 62 6B            LD HL, DE                              ; Restaurar coordenadas originales
+ 52+  8320 FD E5 DD E1      LD IX, IY                              ; Restaurar puntero a matriz original
+ 53+  8324
+ 54+  8324 F1               POP AF                                 ; Restaurar AF (color)
+ 55+  8325 FD E1            POP IY
+ 55+  8327 D1             POP DE
+ 55+  8328 C1             POP BC
+ 56+  8329 C9               RET
+ 57+  832A
+ 58+  832A              ; ==========================================================================
+ 59+  832A              ; FUNCION: FICHAS_PintarFicha16
+ 60+  832A              ; Pinta una ficha circular RELLENA de 16x16 píxeles (4 caracteres 8x8).
+ 61+  832A              ; Usa las matrices "_FICHA" (ej. MATRIZ_CIRCULO_ARRIBA_IZQUIERDA_FICHA).
+ 62+  832A              ;
+ 63+  832A              ; ENTRADA:
+ 64+  832A              ;   H = fila (Y)
+ 65+  832A              ;   L = columna (X)
+ 66+  832A              ;   A = color de la ficha
+ 67+  832A              ; ==========================================================================
+ 68+  832A              FICHAS_PintarFicha16:
+ 69+  832A E5               PUSH HL
+ 69+  832B F5             PUSH AF
+ 70+  832C
+ 71+  832C                  ; Cuadrante superior izquierdo
+ 72+  832C DD 21 E1 80      LD IX, MATRIZ_CIRCULO_ARRIBA_IZQUIERDA_FICHA
+ 73+  8330 CD FE 82         CALL FICHAS_PintarMatriz8x8
+ 74+  8333
+ 75+  8333                  ; Cuadrante superior derecho
+ 76+  8333 2C               INC L
+ 77+  8334 DD 21 E9 80      LD IX, MATRIZ_CIRCULO_ARRIBA_DERECHA_FICHA
+ 78+  8338 CD FE 82         CALL FICHAS_PintarMatriz8x8
+ 79+  833B
+ 80+  833B                  ; Cuadrante inferior derecho
+ 81+  833B 24               INC H
+ 82+  833C DD 21 F9 80      LD IX, MATRIZ_CIRCULO_ABAJO_DERECHA_FICHA
+ 83+  8340 CD FE 82         CALL FICHAS_PintarMatriz8x8
+ 84+  8343
+ 85+  8343                  ; Cuadrante inferior izquierdo
+ 86+  8343 2D               DEC L
+ 87+  8344 DD 21 F1 80      LD IX, MATRIZ_CIRCULO_ABAJO_IZQUIERDA_FICHA
+ 88+  8348 CD FE 82         CALL FICHAS_PintarMatriz8x8
+ 89+  834B
+ 90+  834B F1               POP AF
+ 90+  834C E1             POP HL
+ 91+  834D C9               RET
+ 92+  834E
+ 93+  834E              ; ==========================================================================
+ 94+  834E              ; FUNCIÓN: FICHAS_PintarFicha_AjustadaTablero
+ 95+  834E              ; Pinta una ficha RELLENA de 16x16. Es funcionalmente idéntica a FICHAS_PintarFicha16
+ 96+  834E              ; y es la que se usa en el juego (tablero, preview, animación).
+ 97+  834E              ;
+ 98+  834E              ; ENTRADAS:
+ 99+  834E              ;   H = fila (Y)
+100+  834E              ;   L = columna (X)
+101+  834E              ;   A = color de la ficha
+102+  834E              ; ==========================================================================
+103+  834E              FICHAS_PintarFicha_AjustadaTablero:
+104+  834E E5               PUSH HL
+104+  834F F5             PUSH AF
+105+  8350
+106+  8350                  ; Cuadrante superior izquierdo
+107+  8350 DD 21 E1 80      LD IX, MATRIZ_CIRCULO_ARRIBA_IZQUIERDA_FICHA
+108+  8354 CD FE 82         CALL FICHAS_PintarMatriz8x8
+109+  8357
+110+  8357                  ; Cuadrante superior derecho
+111+  8357 2C               INC L
+112+  8358 DD 21 E9 80      LD IX, MATRIZ_CIRCULO_ARRIBA_DERECHA_FICHA
+113+  835C CD FE 82         CALL FICHAS_PintarMatriz8x8
+114+  835F
+115+  835F                  ; Cuadrante inferior derecho
+116+  835F 24               INC H
+117+  8360 DD 21 F9 80      LD IX, MATRIZ_CIRCULO_ABAJO_DERECHA_FICHA
+118+  8364 CD FE 82         CALL FICHAS_PintarMatriz8x8
+119+  8367
+120+  8367                  ; Cuadrante inferior izquierdo
+121+  8367 2D               DEC L
+122+  8368 DD 21 F1 80      LD IX, MATRIZ_CIRCULO_ABAJO_IZQUIERDA_FICHA
+123+  836C CD FE 82         CALL FICHAS_PintarMatriz8x8
+124+  836F
+125+  836F F1               POP AF
+125+  8370 E1             POP HL
+126+  8371 C9               RET
+127+  8372
+128+  8372              ; ==========================================================================
+129+  8372              ; FUNCION: FICHAS_PintarNfichas
+130+  8372              ; Pinta N fichas (rellenas) una al lado de la otra (pegadas).
+131+  8372              ;
+132+  8372              ; ENTRADAS:
+133+  8372              ;   H = Y inicial (fila)
+134+  8372              ;   L = X inicial (columna)
+135+  8372              ;   A = color
+136+  8372              ;   B = número de fichas a pintar
+137+  8372              ; ==========================================================================
+138+  8372              FICHAS_PintarNfichas:
+139+  8372 E5               PUSH HL
+139+  8373 F5             PUSH AF
+139+  8374 C5             PUSH BC
+140+  8375
+141+  8375              FICHAS_PaintNDiscs_Loop:
+142+  8375 CD 2A 83         CALL FICHAS_PintarFicha16           ; Pinta una ficha
+143+  8378 2C               INC L                               ; Mueve a la siguiente columna (pegado)
+144+  8379 10 FA            DJNZ FICHAS_PaintNDiscs_Loop        ; Repite B veces
+145+  837B
+146+  837B C1               POP BC
+146+  837C F1             POP AF
+146+  837D E1             POP HL
+147+  837E C9               RET
+148+  837F
+149+  837F              ; ==========================================================================
+150+  837F              ; FUNCION: FICHAS_PintarNfichasSeparadas
+151+  837F              ; Pinta N fichas (rellenas) con espacio entre ellas.
+152+  837F              ; Usado por la portada (via utils).
+153+  837F              ;
+154+  837F              ; ENTRADAS:
+155+  837F              ;   H, L = Coordenadas
+156+  837F              ;   A = Color
+157+  837F              ;   B = Número de fichas
+158+  837F              ; ==========================================================================
+159+  837F              FICHAS_PintarNfichasSeparadas:
+160+  837F E5               PUSH HL
+160+  8380 F5             PUSH AF
+160+  8381 C5             PUSH BC
+161+  8382
+162+  8382              FICHAS_PintarNfichasSeparadas_Loop:
+163+  8382 CD 2A 83         CALL FICHAS_PintarFicha16
+164+  8385 2C               INC L
+164+  8386 2C             INC L
+164+  8387 2C             INC L                 ; Avanza 3 posiciones para dejar espacio
+165+  8388 10 F8            DJNZ FICHAS_PintarNfichasSeparadas_Loop
+166+  838A
+167+  838A C1               POP BC
+167+  838B F1             POP AF
+167+  838C E1             POP HL
+168+  838D C9               RET
+169+  838E
+170+  838E              ; ==========================================================================
+171+  838E              ; FUNCIÓN: FICHAS_PintarNfichasSeparadas_Juego
+172+  838E              ; Pinta N fichas (rellenas) con el espaciado específico del tablero (4 celdas).
+173+  838E              ;
+174+  838E              ; ENTRADAS:
+175+  838E              ;   H, L = Coordenadas
+176+  838E              ;   A = color
+177+  838E              ;   B = número de fichas (normalmente 7)
+178+  838E              ; ==========================================================================
+179+  838E              FICHAS_PintarNfichasSeparadas_Juego:
+180+  838E E5               PUSH HL
+180+  838F F5             PUSH AF
+180+  8390 C5             PUSH BC
+181+  8391
+182+  8391              FICHAS_PintarNfichasSeparadas_Juego_Loop:
+183+  8391 CD 4E 83         CALL FICHAS_PintarFicha_AjustadaTablero
+184+  8394 2C               INC L
+184+  8395 2C             INC L
+184+  8396 2C             INC L
+184+  8397 2C             INC L      ; Avanza 4 celdas (espacio del tablero)
+185+  8398 05               DEC B
+186+  8399 20 F6            JR NZ, FICHAS_PintarNfichasSeparadas_Juego_Loop
+187+  839B C1               POP BC
+187+  839C F1             POP AF
+187+  839D E1             POP HL
+188+  839E C9               RET
+# file closed: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\graphics/fichas.asm
+ 41   839F                  INCLUDE "graphics/portada.asm"
+# file opened: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\graphics/portada.asm
+  1+  839F              ; ==========================================================================================
+  2+  839F              ; ARCHIVO: portada.asm
+  3+  839F              ; USO: Dibuja el gráfico de la pantalla de bienvenida (StartScreen).
+  4+  839F              ;      Dibuja un "C" rojo y un "4" amarillo usando las
+  5+  839F              ;      mismas rutinas de fichas (16x16) que se usan en el juego.
+  6+  839F              ; ==========================================================================================
+  7+  839F
+  8+  839F              PORTADA_DibujarPortada:
+  9+  839F F5               PUSH AF
+  9+  83A0 C5             PUSH BC
+  9+  83A1 E5             PUSH HL        ; Preservar registros
+ 10+  83A2
+ 11+  83A2                  ; === PASO 1: Dibujar la 'C' con fichas rojas ===
+ 12+  83A2 3A 0B 80         LD A, (COLOR_CUADRADO_ROJO)     ; Cargar el color Rojo
+ 13+  83A5 F5               PUSH AF                         ; Guardar el color en la pila para las llamadas
+ 14+  83A6
+ 15+  83A6                  ; --- Parte superior de la 'C' --- (Fila H=6)
+ 16+  83A6 26 06            LD H, 6
+ 16+  83A8 2E 06          LD L, 6                ; (X)
+ 17+  83AA CD 2A 83         CALL FICHAS_PintarFicha16
+ 18+  83AD 2E 08            LD L, 8                         ; (X)
+ 19+  83AF CD 2A 83         CALL FICHAS_PintarFicha16
+ 20+  83B2 2E 0A            LD L, 10                        ; (X)
+ 21+  83B4 CD 2A 83         CALL FICHAS_PintarFicha16
+ 22+  83B7
+ 23+  83B7                  ; --- Parte izquierda de la 'C' (vertical) ---
+ 24+  83B7 26 08            LD H, 8
+ 24+  83B9 2E 06          LD L, 6                ; (X)
+ 25+  83BB CD 2A 83         CALL FICHAS_PintarFicha16
+ 26+  83BE 26 0A            LD H, 10
+ 26+  83C0 2E 06          LD L, 6               ; (X)
+ 27+  83C2 CD 2A 83         CALL FICHAS_PintarFicha16
+ 28+  83C5 26 0C            LD H, 12
+ 28+  83C7 2E 06          LD L, 6               ; (X)
+ 29+  83C9 CD 2A 83         CALL FICHAS_PintarFicha16
+ 30+  83CC
+ 31+  83CC                  ; --- Parte inferior de la 'C' --- (Fila H=14)
+ 32+  83CC 26 0E            LD H, 14
+ 32+  83CE 2E 06          LD L, 6               ; (X)
+ 33+  83D0 CD 2A 83         CALL FICHAS_PintarFicha16
+ 34+  83D3 2E 08            LD L, 8                         ; (X)
+ 35+  83D5 CD 2A 83         CALL FICHAS_PintarFicha16
+ 36+  83D8 2E 0A            LD L, 10                        ; (X)
+ 37+  83DA CD 2A 83         CALL FICHAS_PintarFicha16
+ 38+  83DD
+ 39+  83DD F1               POP AF                          ; Limpiar el color Rojo de la pila
+ 40+  83DE
+ 41+  83DE                  ; === PASO 2: Dibujar el '4' con fichas amarillas ===
+ 42+  83DE 3A 0A 80         LD A, (COLOR_CUADRADO_AMARILLO) ; Cargar el color Amarillo
+ 43+  83E1 F5               PUSH AF                         ; Guardar el color en la pila
+ 44+  83E2
+ 45+  83E2                  ; --- Palo vertical izquierdo del '4' ---
+ 46+  83E2 26 06            LD H, 6
+ 46+  83E4 2E 12          LD L, 18               ; (X)
+ 47+  83E6 CD 2A 83         CALL FICHAS_PintarFicha16
+ 48+  83E9 26 08            LD H, 8
+ 48+  83EB 2E 12          LD L, 18               ; (X)
+ 49+  83ED CD 2A 83         CALL FICHAS_PintarFicha16
+ 50+  83F0 26 0A            LD H, 10
+ 50+  83F2 2E 12          LD L, 18              ; (X)
+ 51+  83F4 CD 2A 83         CALL FICHAS_PintarFicha16
+ 52+  83F7
+ 53+  83F7                  ; --- Línea horizontal del '4' --- (Fila H=10)
+ 54+  83F7 26 0A            LD H, 10
+ 54+  83F9 2E 14          LD L, 20              ; (X)
+ 55+  83FB CD 2A 83         CALL FICHAS_PintarFicha16
+ 56+  83FE 2E 16            LD L, 22                        ; (X)
+ 57+  8400 CD 2A 83         CALL FICHAS_PintarFicha16
+ 58+  8403
+ 59+  8403                  ; --- Palo vertical derecho del '4' ---
+ 60+  8403 26 06            LD H, 6
+ 60+  8405 2E 16          LD L, 22               ; (X)
+ 61+  8407 CD 2A 83         CALL FICHAS_PintarFicha16
+ 62+  840A 26 08            LD H, 8
+ 62+  840C 2E 16          LD L, 22               ; (X)
+ 63+  840E CD 2A 83         CALL FICHAS_PintarFicha16
+ 64+  8411 26 0C            LD H, 12
+ 64+  8413 2E 16          LD L, 22              ; (X)
+ 65+  8415 CD 2A 83         CALL FICHAS_PintarFicha16
+ 66+  8418 26 0E            LD H, 14
+ 66+  841A 2E 16          LD L, 22              ; (X)
+ 67+  841C CD 2A 83         CALL FICHAS_PintarFicha16
+ 68+  841F
+ 69+  841F F1               POP AF                          ; Limpiar el color Amarillo de la pila
+ 70+  8420
+ 71+  8420                  ; === PASO 3: Restaurar registros ===
+ 72+  8420 E1               POP HL
+ 72+  8421 C1             POP BC
+ 72+  8422 F1             POP AF          ; Restaurar registros originales (Orden LIFO)
+ 73+  8423 C9               RET
+# file closed: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\graphics/portada.asm
+ 42   8424                  INCLUDE "graphics/posxy.asm"
+# file opened: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\graphics/posxy.asm
+  1+  8424              ; ====================================================================================================
+  2+  8424              ; ARCHIVO: posxy.asm
+  3+  8424              ; USO: Rutinas de conversión de coordenadas (Y,X) a direcciones de memoria
+  4+  8424              ;      de la pantalla del ZX Spectrum.
+  5+  8424              ; ====================================================================================================
+  6+  8424
+  7+  8424              ; ====================================================================================================
+  8+  8424              ; FUNCIÓN: POSXY_CalcPixelAddr_4000
+  9+  8424              ;
+ 10+  8424              ; DESCRIPCIÓN:
+ 11+  8424              ;   Calcula la dirección de memoria de PÍXELES (rango $4000 - $57FF)
+ 12+  8424              ;   correspondiente a una coordenada (H=Y, L=X).
+ 13+  8424              ;
+ 14+  8424              ;   La pantalla del Spectrum está dividida en 3 tercios (cuadrantes) verticales:
+ 15+  8424              ;    - 1er Tercio (Y: 0-7)   -> Base $4000
+ 16+  8424              ;    - 2do Tercio (Y: 8-15)  -> Base $4800
+ 17+  8424              ;    - 3er Tercio (Y: 16-23) -> Base $5000
+ 18+  8424              ;
+ 19+  8424              ; ENTRADA: H = Coordenada Y (0-23), L = Coordenada X (0-31)
+ 20+  8424              ; SALIDA:  HL = Dirección en memoria de vídeo ($4xxx o $5xxx)
+ 21+  8424              ; ====================================================================================================
+ 22+  8424              POSXY_CalcPixelAddr_4000:
+ 23+  8424 F5               PUSH AF
+ 23+  8425 C5             PUSH BC
+ 23+  8426 D5             PUSH DE             ; Preservar registros
+ 24+  8427
+ 25+  8427 1E 40            LD E, $40                             ; Base por defecto = $4000 (1er tercio)
+ 26+  8429
+ 27+  8429                  ; --- 1. Determinar en qué tercio está Y (H) ---
+ 28+  8429 3E 07            LD A, 7
+ 29+  842B BC               CP H
+ 30+  842C 30 13            JR NC, .CALC_COMMON                   ; Si Y <= 7  -> 1er tercio (E=$40)
+ 31+  842E
+ 32+  842E 3E 0F            LD A, 15
+ 33+  8430 BC               CP H
+ 34+  8431 30 08            JR NC, .CALC_2DO_TERCIO               ; Si Y <= 15 -> 2do tercio
+ 35+  8433
+ 36+  8433                  ; --- 3er Tercio (Y: 16-23) ---
+ 37+  8433 7C               LD A, H
+ 38+  8434 D6 10            SUB 16                                ; A = H - 16 (Normalizar Y a 0-7)
+ 39+  8436 67               LD H, A
+ 40+  8437 1E 50            LD E, $50                             ; Base = $5000
+ 41+  8439 18 06            JR .CALC_COMMON
+ 42+  843B
+ 43+  843B              .CALC_2DO_TERCIO:
+ 44+  843B                  ; --- 2do Tercio (Y: 8-15) ---
+ 45+  843B 7C               LD A, H
+ 46+  843C D6 08            SUB 8                                 ; A = H - 8 (Normalizar Y a 0-7)
+ 47+  843E 67               LD H, A
+ 48+  843F 1E 48            LD E, $48                             ; Base = $4800
+ 49+  8441
+ 50+  8441              .CALC_COMMON:
+ 51+  8441                  ; --- 2. Cálculo común de la dirección ---
+ 52+  8441                  ; (H = Y normalizada 0-7, E = Base del tercio, L = X 0-31)
+ 53+  8441
+ 54+  8441 7C               LD A, H                               ; A = Y (0-7)
+ 55+  8442 CB 27            SLA A
+ 55+  8444 CB 27          SLA A
+ 55+  8446 CB 27          SLA A
+ 55+  8448 CB 27          SLA A
+ 55+  844A CB 27          SLA A     ; A = Y * 32 (Desplazamiento de fila)
+ 56+  844C B5               OR L                                  ; A = (Y * 32) + X (Desplazamiento total)
+ 57+  844D 6F               LD L, A                               ; L = Byte bajo de la dirección
+ 58+  844E
+ 59+  844E 7C               LD A, H
+ 60+  844F CB 2F            SRA A
+ 60+  8451 CB 2F          SRA A
+ 60+  8453 CB 2F          SRA A                   ; A = Y / 8 (Ajuste para el byte alto)
+ 61+  8455 B3               OR E                                  ; Combinar con la Base ($40, $48 o $50)
+ 62+  8456 67               LD H, A                               ; H = Byte alto de la dirección
+ 63+  8457
+ 64+  8457 D1               POP DE
+ 64+  8458 C1             POP BC
+ 64+  8459 F1             POP AF
+ 65+  845A C9               RET
+ 66+  845B
+ 67+  845B              ; ====================================================================================================
+ 68+  845B              ; FUNCIÓN: POSXY_CalcAttrAddr_5800
+ 69+  845B              ;
+ 70+  845B              ; DESCRIPCIÓN:
+ 71+  845B              ;   Calcula la dirección de memoria de ATRIBUTOS (rango $5800 - $5AFF)
+ 72+  845B              ;   correspondiente a una coordenada de carácter (H=Y, L=X).
+ 73+  845B              ;
+ 74+  845B              ;   La fórmula es: Dirección = $5800 + (Y * 32) + X
+ 75+  845B              ;
+ 76+  845B              ; ENTRADA: H = Coordenada Y (0-23), L = Coordenada X (0-31)
+ 77+  845B              ; SALIDA:  HL = Dirección de atributo ($58xx - $5Axx)
+ 78+  845B              ; ====================================================================================================
+ 79+  845B              POSXY_CalcAttrAddr_5800:
+ 80+  845B F5               PUSH AF                              ; Preservar AF
+ 81+  845C
+ 82+  845C                  ; --- Cálculo del Byte Bajo (L) ---
+ 83+  845C 7C               LD A, H                              ; A = Y
+ 84+  845D CB 27            SLA A
+ 84+  845F CB 27          SLA A
+ 84+  8461 CB 27          SLA A
+ 84+  8463 CB 27          SLA A
+ 84+  8465 CB 27          SLA A    ; A = Y * 32 (5 desplazamientos)
+ 85+  8467 B5               OR L                                 ; A = (Y * 32) + X
+ 86+  8468 6F               LD L, A                              ; L = Byte bajo de la dirección
+ 87+  8469
+ 88+  8469                  ; --- Cálculo del Byte Alto (H) ---
+ 89+  8469 7C               LD A, H                              ; A = Y
+ 90+  846A CB 2F            SRA A
+ 90+  846C CB 2F          SRA A
+ 90+  846E CB 2F          SRA A                  ; A = Y / 8 (3 desplazamientos)
+ 91+  8470 F6 58            OR $58                               ; Combinar con la base de atributos $5800
+ 92+  8472 67               LD H, A                              ; H = Byte alto de la dirección
+ 93+  8473
+ 94+  8473 F1               POP AF                               ; Restaurar AF
+ 95+  8474 C9               RET
+# file closed: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\graphics/posxy.asm
+ 43   8475                  INCLUDE "graphics/tablero.asm"
+# file opened: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\graphics/tablero.asm
+  1+  8475              ; ============================================================================================
+  2+  8475              ; ARCHIVO: tablero.asm
+  3+  8475              ; USO: Dibuja el tablero gráfico del juego "Conecta 4".
+  4+  8475              ; ============================================================================================
+  5+  8475
+  6+  8475              ; ============================================================================================
+  7+  8475              ; FUNCIÓN PRINCIPAL: TABLERO_DibujarTableroCompleto
+  8+  8475              ; Dibuja el tablero de juego completo: un gran fondo azul y 42 huecos negros
+  9+  8475              ; (que son en realidad fichas negras) para crear la cuadrícula.
+ 10+  8475              ; ============================================================================================
+ 11+  8475              TABLERO_DibujarTableroCompleto:
+ 12+  8475 F5               PUSH AF
+ 12+  8476 C5             PUSH BC
+ 12+  8477 D5             PUSH DE
+ 12+  8478 E5             PUSH HL
+ 12+  8479 DD E5          PUSH IX
+ 13+  847B CD 59 87         CALL CLEARSCR
+ 14+  847E
+ 15+  847E                  ; === PASO 1: Pintar fondo azul completo (19x29) ===
+ 16+  847E 26 03            LD H, 3                             ; Fila inicial (Y)
+ 17+  8480 2E 03            LD L, 3                             ; Columna inicial (X)
+ 18+  8482 06 13            LD B, 19                            ; Alto (19 filas de caracteres)
+ 19+  8484 0E 1C            LD C, 28                            ; Ancho (28 columnas de caracteres)
+ 20+  8486 3E 08            LD A, COLOR_PAPER_AZUL              ; Color de atributo (Fondo Azul)
+ 21+  8488 CD B3 84         CALL TABLERO_RellenarRectAtributo   ; Llama a la subrutina que rellena
+ 22+  848B
+ 23+  848B                  ; === PASO 2: Pintar los 42 huecos negros (Grid 6x7) ===
+ 24+  848B                  ; Usamos un bucle anidado para dibujar 6 filas de 7 huecos cada una.
+ 25+  848B 26 04            LD H, 4                      ; H = Fila Y inicial del primer hueco (Fila Lógica 0)
+ 26+  848D 16 06            LD D, 6                      ; D = Contador de filas de huecos (6 filas)
+ 27+  848F
+ 28+  848F              TABLERO_Row_Loop:
+ 29+  848F E5               PUSH HL                      ; Guardar H (posición Y de la fila actual)
+ 30+  8490 2E 04            LD L, 4                      ; L = Columna X inicial (Columna Lógica 0)
+ 31+  8492 1E 07            LD E, 7                      ; E = Contador de columnas de huecos (7 columnas)
+ 32+  8494
+ 33+  8494              TABLERO_Col_Loop:
+ 34+  8494 D5               PUSH DE                      ; Guardar contadores D (filas) y E (columnas)
+ 35+  8495 E5               PUSH HL                      ; Guardar H,L (posición actual del hueco)
+ 36+  8496
+ 37+  8496                  ; Pintar un HUECO (una ficha negra sobre fondo azul)
+ 38+  8496                  ; Se usa la misma rutina que para pintar fichas de jugador.
+ 39+  8496 3E 08            LD A, COLOR_INK_NEGRO + COLOR_PAPER_AZUL
+ 40+  8498 CD 4E 83         CALL FICHAS_PintarFicha_AjustadaTablero
+ 41+  849B
+ 42+  849B E1               POP HL                       ; Recuperar H,L
+ 43+  849C D1               POP DE                       ; Recuperar D,E
+ 44+  849D
+ 45+  849D                  ; Avanzar a la siguiente columna de huecos
+ 46+  849D                  ; La ficha mide 2 celdas + 2 celdas de barra azul = 4 celdas
+ 47+  849D 7D               LD A, L
+ 48+  849E C6 04            ADD A, 4                     ; Avanza 4 columnas de caracteres
+ 49+  84A0 6F               LD L, A
+ 50+  84A1
+ 51+  84A1 1D               DEC E                        ; Decrementar contador de columnas (E)
+ 52+  84A2 20 F0            JR NZ, TABLERO_Col_Loop      ; Repetir 7 veces
+ 53+  84A4
+ 54+  84A4 E1               POP HL                       ; Recuperar H (posición Y de la fila)
+ 55+  84A5
+ 56+  84A5                  ; Avanzar a la siguiente fila de huecos
+ 57+  84A5                  ; La ficha mide 2 celdas + 1 celda de barra azul = 3 celdas
+ 58+  84A5 7C               LD A, H
+ 59+  84A6 C6 03            ADD A, 3                     ; Avanza 3 filas de caracteres
+ 60+  84A8 67               LD H, A
+ 61+  84A9
+ 62+  84A9 15               DEC D                        ; Decrementar contador de filas (D)
+ 63+  84AA 20 E3            JR NZ, TABLERO_Row_Loop      ; Repetir 6 veces
+ 64+  84AC
+ 65+  84AC DD E1            POP IX
+ 65+  84AE E1             POP HL
+ 65+  84AF D1             POP DE
+ 65+  84B0 C1             POP BC
+ 65+  84B1 F1             POP AF
+ 66+  84B2 C9               RET
+ 67+  84B3
+ 68+  84B3              ; ============================================================================================
+ 69+  84B3              ; FUNCIÓN: TABLERO_RellenarRectAtributo
+ 70+  84B3              ; Rellena un área de (B x C) caracteres en (H, L) con píxeles vacíos (0)
+ 71+  84B3              ; y un atributo de color sólido (A).
+ 72+  84B3              ;
+ 73+  84B3              ; ENTRADA: B = Alto, C = Ancho, A = Color, HL = Coordenadas (Y,X)
+ 74+  84B3              ; ============================================================================================
+ 75+  84B3              TABLERO_RellenarRectAtributo:
+ 76+  84B3 F5               PUSH AF
+ 76+  84B4 C5             PUSH BC
+ 76+  84B5 D5             PUSH DE
+ 76+  84B6 E5             PUSH HL
+ 77+  84B7 50               LD D, B              ; D = Contador de filas
+ 78+  84B8
+ 79+  84B8              TABLERO_RellenarRect_RowLoop:
+ 80+  84B8 E5               PUSH HL              ; Guardar H,L (inicio de la fila)
+ 81+  84B9 59               LD E, C              ; E = Contador de columnas
+ 82+  84BA
+ 83+  84BA              TABLERO_RellenarRect_ColLoop:
+ 84+  84BA E5               PUSH HL              ; Guardar H,L (celda actual)
+ 85+  84BB F5               PUSH AF              ; Guardar Color (A)
+ 86+  84BC
+ 87+  84BC                  ; 1. Borrar píxeles (poner a 0)
+ 88+  84BC CD 24 84         CALL POSXY_CalcPixelAddr_4000 ; HL = Dirección de píxel
+ 89+  84BF 06 08            LD B, 8              ; 8 líneas de píxeles por carácter
+ 90+  84C1 AF               XOR A                ; A = 0
+ 91+  84C2              .Pixel_Loop:
+ 92+  84C2 77               LD (HL), A           ; Escribir 0 en memoria de vídeo
+ 93+  84C3 24               INC H                ; Siguiente línea de píxel
+ 94+  84C4 10 FC            DJNZ .Pixel_Loop
+ 95+  84C6
+ 96+  84C6                  ; 2. Pintar atributo
+ 97+  84C6 F1               POP AF               ; Recuperar Color (A)
+ 98+  84C7 E1               POP HL               ; Recuperar H,L (coordenadas)
+ 99+  84C8 E5               PUSH HL              ; Guardar H,L otra vez (POSXY lo modifica)
+100+  84C9
+101+  84C9 CD 5B 84         CALL POSXY_CalcAttrAddr_5800 ; HL = Dirección de atributo
+102+  84CC 77               LD (HL), A           ; Escribir el color
+103+  84CD
+104+  84CD E1               POP HL               ; Recuperar H,L
+105+  84CE 2C               INC L                ; Siguiente columna (X+1)
+106+  84CF 1D               DEC E                ; Decrementar contador de columnas
+107+  84D0 20 E8            JR NZ, TABLERO_RellenarRect_ColLoop
+108+  84D2
+109+  84D2 E1               POP HL               ; Recuperar H,L (inicio de fila)
+110+  84D3 24               INC H                ; Siguiente fila (Y+1)
+111+  84D4 15               DEC D                ; Decrementar contador de filas
+112+  84D5 20 E1            JR NZ, TABLERO_RellenarRect_RowLoop
+113+  84D7
+114+  84D7 E1               POP HL
+114+  84D8 D1             POP DE
+114+  84D9 C1             POP BC
+114+  84DA F1             POP AF
+115+  84DB C9               RET
+116+  84DC
+117+  84DC              ; ============================================================================================
+118+  84DC              ; RUTINAS AUXILIARES
+119+  84DC              ; (Funciones de dibujo de matrices de fichas, que usabamos antes en el archivo 'core.asm')
+120+  84DC              ; ============================================================================================
+121+  84DC              ; --------------------------------------------------------------------------------------------
+122+  84DC              ; TABLERO_DibujarMatrizFichas_Juego
+123+  84DC              ; Dibuja N filas (D) de N fichas (B) con el espaciado del JUEGO (4 celdas H).
+124+  84DC              ; --------------------------------------------------------------------------------------------
+125+  84DC              TABLERO_DibujarMatrizFichas_Juego:
+126+  84DC E5               PUSH HL
+126+  84DD F5             PUSH AF
+126+  84DE C5             PUSH BC
+127+  84DF 51               LD D, C                                     ; D = Contador de filas
+128+  84E0
+129+  84E0              TABLERO_DibujarMatrizFichas_Juego_Fila_Loop:
+130+  84E0 E5               PUSH HL
+130+  84E1 F5             PUSH AF
+130+  84E2 C5             PUSH BC
+131+  84E3
+132+  84E3 CD 8E 83         CALL FICHAS_PintarNfichasSeparadas_Juego
+133+  84E6 C1               POP BC
+133+  84E7 F1             POP AF
+133+  84E8 E1             POP HL
+134+  84E9
+135+  84E9 24               INC H
+135+  84EA 24             INC H
+135+  84EB 24             INC H                         ; Avanza 3 filas (Y)
+136+  84EC 2E 04            LD L, 4                                     ; Reinicia X a la columna 4
+137+  84EE 15               DEC D
+138+  84EF 20 EF            JR NZ, TABLERO_DibujarMatrizFichas_Juego_Fila_Loop
+139+  84F1
+140+  84F1 C1               POP BC
+140+  84F2 F1             POP AF
+140+  84F3 E1             POP HL
+141+  84F4 C9               RET
+142+  84F5
+143+  84F5              ; --------------------------------------------------------------------------------------------
+144+  84F5              ; TABLERO_DibujarMatrizFichas
+145+  84F5              ; Dibuja N filas (D) de N fichas (B) con el espaciado de PORTADA (3 celdas H).
+146+  84F5              ; --------------------------------------------------------------------------------------------
+147+  84F5              TABLERO_DibujarMatrizFichas:
+148+  84F5 E5               PUSH HL
+148+  84F6 F5             PUSH AF
+148+  84F7 C5             PUSH BC
+149+  84F8 51               LD D, C                                     ; D = Contador de filas
+150+  84F9
+151+  84F9              TABLERO_DibujarMatrizFichas_Fila_Loop:
+152+  84F9 E5               PUSH HL
+152+  84FA F5             PUSH AF
+152+  84FB C5             PUSH BC
+153+  84FC
+154+  84FC CD 7F 83         CALL FICHAS_PintarNfichasSeparadas
+155+  84FF C1               POP BC
+155+  8500 F1             POP AF
+155+  8501 E1             POP HL
+156+  8502
+157+  8502 24               INC H
+157+  8503 24             INC H
+157+  8504 24             INC H                         ; Avanza 3 filas (Y)
+158+  8505 2E 03            LD L, 3                                     ; Reinicia X a la columna 3
+159+  8507 15               DEC D                                       ; Decrementar contador de filas con el fin de evitar pintar de más (filas sobrantes)
+160+  8508 20 EF            JR NZ, TABLERO_DibujarMatrizFichas_Fila_Loop
+161+  850A
+162+  850A C1               POP BC
+162+  850B F1             POP AF
+162+  850C E1             POP HL
+163+  850D C9               RET
+# file closed: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\graphics/tablero.asm
+ 44   850E                  INCLUDE "graphics/utils.asm"
+# file opened: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\graphics/utils.asm
+  1+  850E              ; ============================================================================================
+  2+  850E              ; ARCHIVO: utils.asm
+  3+  850E              ; USO: Funciones auxiliares y extendidas (decoraciones, pausas, efectos).
+  4+  850E              ; ============================================================================================
+  5+  850E
+  6+  850E              ; ==========================================================================
+  7+  850E              ; FUNCIÓN: UTIL_PintarNfichasAlternandoColores
+  8+  850E              ; Pinta N fichas consecutivas CON ESPACIO, alternando entre roja y amarilla.
+  9+  850E              ;
+ 10+  850E              ; ENTRADAS:
+ 11+  850E              ;   H = Fila inicial (Y)
+ 12+  850E              ;   L = Columna inicial (X)
+ 13+  850E              ;   B = Número de fichas a pintar
+ 14+  850E              ; ==========================================================================
+ 15+  850E              UTIL_PintarNfichasAlternandoColores:
+ 16+  850E E5               PUSH HL
+ 16+  850F C5             PUSH BC
+ 16+  8510 D5             PUSH DE
+ 16+  8511 F5             PUSH AF  ; Preservar todos los registros
+ 17+  8512
+ 18+  8512                  ; --- Cargar colores desde memoria ---
+ 19+  8512 3A 0B 80         LD A, (COLOR_CUADRADO_ROJO)
+ 20+  8515 57               LD D, A                            ; Guarda color rojo en D
+ 21+  8516 3A 0A 80         LD A, (COLOR_CUADRADO_AMARILLO)
+ 22+  8519 5F               LD E, A                            ; Guarda color amarillo en E
+ 23+  851A 7B               LD A, E                            ; Empezar con el color Amarillo (E)
+ 24+  851B
+ 25+  851B              UTIL_PintarNfichasAlternandoColores_Loop:
+ 26+  851B                  ; Pinta la ficha de 16x16 con el color actual en A
+ 27+  851B CD 2A 83         CALL FICHAS_PintarFicha16
+ 28+  851E
+ 29+  851E                  ; --- Alternar color ---
+ 30+  851E BA               CP D                                ; ¿El color actual (A) es Rojo (D)?
+ 31+  851F 28 03            JR Z, .SET_YELLOW                   ; Si sí, saltar para poner Amarillo
+ 32+  8521 7A               LD A, D                             ; Si no, poner Rojo
+ 33+  8522 18 01            JR .COLOR_LISTO
+ 34+  8524
+ 35+  8524              .SET_YELLOW:
+ 36+  8524 7B               LD A, E                             ; Poner Amarillo
+ 37+  8525
+ 38+  8525              .COLOR_LISTO:
+ 39+  8525                  ; Avanza 3 posiciones (L+3).
+ 40+  8525                  ; (La ficha mide 2 (L, L+1). L+2 sería pegado. L+3 deja un carácter de espacio).
+ 41+  8525 2C               INC L
+ 41+  8526 2C             INC L
+ 41+  8527 2C             INC L
+ 42+  8528
+ 43+  8528 10 F1            DJNZ UTIL_PintarNfichasAlternandoColores_Loop ; Decrementa B y repite si no es 0
+ 44+  852A
+ 45+  852A F1               POP AF
+ 45+  852B D1             POP DE
+ 45+  852C C1             POP BC
+ 45+  852D E1             POP HL      ; Restaurar registros
+ 46+  852E C9               RET
+ 47+  852F
+ 48+  852F              ; ==========================================================================
+ 49+  852F              ; FUNCIÓN: UTIL_VISUAL_ERROR_FULL_ROW
+ 50+  852F              ; Realiza un efecto visual de error (borde rojo parpadeante)
+ 51+  852F              ; parpadeando 2 veces lentamente para indicar que la fila elegida está llena.
+ 52+  852F              ; ==========================================================================
+ 53+  852F              UTIL_VISUAL_ERROR_FULL_ROW:
+ 54+  852F F5               PUSH AF
+ 54+  8530 C5             PUSH BC
+ 54+  8531 D5             PUSH DE
+ 55+  8532 16 02            LD D, 2     ;Contador para parpadear 2 veces
+ 56+  8534
+ 57+  8534              .BLINK_LOOP:
+ 58+  8534                  ; --- 1. Poner Borde ROJO ---
+ 59+  8534 3E 02            LD A, 2                     ; Color Rojo
+ 60+  8536 D3 FE            OUT ($FE), A                ; Cambiar borde
+ 61+  8538
+ 62+  8538                  ; --- 2. Pausa Larga (Encendido) ---
+ 63+  8538 01 A8 61         LD BC, 25000                ; Retardo para pausa larga del parpadeo
+ 64+  853B CD 4F 85         CALL UTIL_Pausar
+ 65+  853E
+ 66+  853E                  ; --- 3. Restaurar Borde (BLANCO) ---
+ 67+  853E 3E 07            LD A, 7                     ; Color Blanco
+ 68+  8540 D3 FE            OUT ($FE), A                ; Restaurar borde
+ 69+  8542
+ 70+  8542                  ; --- 4. Pausa Larga (Apagado) ---
+ 71+  8542                  ; OJO: Aqui es importante pausar también para que se note el "apagado" antes
+ 72+  8542                  ; del siguiente parpadeo!
+ 73+  8542 01 A8 61         LD BC, 25000                ; Mismo retardo
+ 74+  8545 CD 4F 85         CALL UTIL_Pausar
+ 75+  8548
+ 76+  8548                  ; --- 5. Control del Bucle ---
+ 77+  8548 15               DEC D                       ; Restamos 1 al contador (D)
+ 78+  8549 20 E9            JR NZ, .BLINK_LOOP          ; Si D no es 0, saltamos al inicio para parpadear otra vez
+ 79+  854B
+ 80+  854B D1               POP DE
+ 80+  854C C1             POP BC
+ 80+  854D F1             POP AF
+ 81+  854E C9               RET
+ 82+  854F
+ 83+  854F              ; ==========================================================================
+ 84+  854F              ; FUNCIÓN: UTIL_Pausar
+ 85+  854F              ; Realiza una pausa (delay) simple. Es un "bucle loco" (busy-loop).
+ 86+  854F              ;
+ 87+  854F              ; ENTRADAS:
+ 88+  854F              ;   BC = Duración de la pausa (16 bits). Un valor más alto tarda más.
+ 89+  854F              ;        (Ej: 60000 para una pausa larga).
+ 90+  854F              ; ==========================================================================
+ 91+  854F              UTIL_Pausar:
+ 92+  854F C5               PUSH BC                     ; Preservar BC (aunque sea el contador)
+ 93+  8550              .Pause_Loop:
+ 94+  8550 0B               DEC BC                      ; Decrementa el contador de 16 bits
+ 95+  8551 78               LD A, B                     ; Cargar byte alto
+ 96+  8552 B1               OR C                        ; Comprobar si el byte bajo también es 0
+ 97+  8553 20 FB            JR NZ, .Pause_Loop          ; Si BC no es 0, seguir en el bucle
+ 98+  8555 C1               POP BC                      ; Restaurar BC
+ 99+  8556 C9               RET
+# file closed: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\graphics/utils.asm
+ 45   8557
+ 46   8557              ; ----------------------------------------------
+ 47   8557              ; 4. Entrada/Salida (IO)
+ 48   8557              ; ----------------------------------------------
+ 49   8557                  INCLUDE "io/keyboard.asm"
+# file opened: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\io/keyboard.asm
+  1+  8557              ; ============================================================================================
+  2+  8557              ; ARCHIVO: keyboard.asm
+  3+  8557              ; USO: Rutinas de hardware y bucle principal de entrada (teclado) del juego.
+  4+  8557              ;
+  5+  8557              ; NOTA TÉCNICA: El ZX Spectrum usa LÓGICA NEGATIVA para el teclado:
+  6+  8557              ;               BIT = 0 -> Tecla PULSADA
+  7+  8557              ;               BIT = 1 -> Tecla NO pulsada
+  8+  8557              ;
+  9+  8557              ; MAPA DE TECLAS (Conecta 3 - 3 jugadores):
+ 10+  8557              ;   P1 (izquierdo):     Q=Arriba ($FBFE/D0), A=Abajo ($FDFE/D0), Z=Confirmar ($FEFE/D1)
+ 11+  8557              ;   P2 (centro-izq):    E=Arriba ($FBFE/D2), D=Abajo ($FDFE/D2), C=Confirmar ($FEFE/D3)
+ 12+  8557              ;   P3 (centro):        T=Arriba ($FBFE/D4), G=Abajo ($FDFE/D4), B=Confirmar ($7FFE/D4)
+ 13+  8557              ; ============================================================================================
+ 14+  8557
+ 15+  8557              ; ============================================================================================
+ 16+  8557              ; 1. UTILIDADES DE HARDWARE
+ 17+  8557              ; ============================================================================================
+ 18+  8557              ; --------------------------------------------------------------------------------------------
+ 19+  8557              ; COLOR_BORDE_PANTALLA
+ 20+  8557              ; Pone el borde de la pantalla en blanco (7).
+ 21+  8557              ; --------------------------------------------------------------------------------------------
+ 22+  8557              COLOR_BORDE_PANTALLA:
+ 23+  8557 3E 07            LD A, 7
+ 24+  8559 D3 FE            OUT (254), A
+ 25+  855B C9               RET
+ 26+  855C
+ 27+  855C              ; --------------------------------------------------------------------------------------------
+ 28+  855C              ; KEYBOARD_WAIT_RELEASE
+ 29+  855C              ; Espera hasta que todas las teclas de una fila sean soltadas (debounce).
+ 30+  855C              ;
+ 31+  855C              ; Entrada:  BC = puerto de la fila de teclado a monitorizar
+ 32+  855C              ; Salida:   -
+ 33+  855C              ; Modifica: AF
+ 34+  855C              ; --------------------------------------------------------------------------------------------
+ 35+  855C              KEYBOARD_WAIT_RELEASE:
+ 36+  855C ED 78            IN A, (C)
+ 37+  855E E6 1F            AND $1F                         ; Solo los 5 bits de teclas
+ 38+  8560 FE 1F            CP $1F                          ; $1F = todas sueltas (lógica negativa)
+ 39+  8562 20 F8            JR NZ, KEYBOARD_WAIT_RELEASE
+ 40+  8564 C9               RET
+ 41+  8565
+ 42+  8565              ; ============================================================================================
+ 43+  8565              ; 2. LECTURA BLOQUEANTE (PARA MENÚS)
+ 44+  8565              ; ============================================================================================
+ 45+  8565              ; --------------------------------------------------------------------------------------------
+ 46+  8565              ; KEYBOARD_LEER_SN
+ 47+  8565              ; Detiene la ejecución hasta que el usuario pulsa 'S' o 'N'.
+ 48+  8565              ;
+ 49+  8565              ; Entrada:  -
+ 50+  8565              ; Salida:   A = 'S' o 'N'
+ 51+  8565              ; Modifica: AF, BC (BC preservado)
+ 52+  8565              ; --------------------------------------------------------------------------------------------
+ 53+  8565              KEYBOARD_LEER_SN:
+ 54+  8565 C5               PUSH BC
+ 55+  8566
+ 56+  8566              .CHECK_S:
+ 57+  8566 01 FE FD         LD BC, $FDFE        ; Fila A,S,D,F,G - Bit 1 = 'S'
+ 58+  8569 ED 78            IN A, (C)
+ 59+  856B CB 4F            BIT 1, A
+ 60+  856D 28 10            JR Z, .S_PRESSED
+ 61+  856F
+ 62+  856F              .CHECK_N:
+ 63+  856F 01 FE 7F         LD BC, $7FFE        ; Fila Space,Sym,M,N,B - Bit 3 = 'N'
+ 64+  8572 ED 78            IN A, (C)
+ 65+  8574 CB 5F            BIT 3, A
+ 66+  8576 20 EE            JR NZ, .CHECK_S
+ 67+  8578
+ 68+  8578              .N_PRESSED:
+ 69+  8578 CD 5C 85         CALL KEYBOARD_WAIT_RELEASE
+ 70+  857B 3E 4E            LD A, 'N'
+ 71+  857D C1               POP BC
+ 72+  857E C9               RET
+ 73+  857F
+ 74+  857F              .S_PRESSED:
+ 75+  857F CD 5C 85         CALL KEYBOARD_WAIT_RELEASE
+ 76+  8582 3E 53            LD A, 'S'
+ 77+  8584 C1               POP BC
+ 78+  8585 C9               RET
+ 79+  8586
+ 80+  8586              ; ============================================================================================
+ 81+  8586              ; 3. LECTURA NO BLOQUEANTE (POLLING PARA EL JUEGO)
+ 82+  8586              ; ============================================================================================
+ 83+  8586              ; --------------------------------------------------------------------------------------------
+ 84+  8586              ; KEYBOARD_POLL_PLAYER_MOVE
+ 85+  8586              ; Comprueba las teclas de movimiento vertical del jugador activo.
+ 86+  8586              ;
+ 87+  8586              ; Entrada:  (GUARDAR_JUGADOR_ACTUAL) - jugador activo (1, 2 o 3)
+ 88+  8586              ; Salida:   A = KEY_UP  si tecla arriba pulsada
+ 89+  8586              ;           A = KEY_DOWN si tecla abajo pulsada
+ 90+  8586              ;           A = 0       si ninguna tecla pulsada
+ 91+  8586              ; Modifica: AF, BC
+ 92+  8586              ; --------------------------------------------------------------------------------------------
+ 93+  8586              KEYBOARD_POLL_PLAYER_MOVE:
+ 94+  8586 3A 03 81         LD A, (GUARDAR_JUGADOR_ACTUAL)
+ 95+  8589 FE 02            CP PLAYER_2
+ 96+  858B 28 18            JR Z, .CHECK_P2_KEYS
+ 97+  858D FE 03            CP PLAYER_3
+ 98+  858F 28 28            JR Z, .CHECK_P3_KEYS
+ 99+  8591
+100+  8591              .CHECK_P1_KEYS:
+101+  8591                  ; P1: Q=Arriba ($FBFE/D0),  A=Abajo ($FDFE/D0)
+102+  8591 01 FE FB         LD BC, $FBFE
+103+  8594 ED 78            IN A, (C)
+104+  8596 CB 47            BIT 0, A            ; Q = bit D0
+105+  8598 28 33            JR Z, .RET_UP
+106+  859A
+107+  859A 01 FE FD         LD BC, $FDFE
+108+  859D ED 78            IN A, (C)
+109+  859F CB 47            BIT 0, A            ; A = bit D0
+110+  85A1 28 2D            JR Z, .RET_DOWN
+111+  85A3 18 26            JR .RET_NONE
+112+  85A5
+113+  85A5              .CHECK_P2_KEYS:
+114+  85A5                  ; P2: E=Arriba ($FBFE/D2),  D=Abajo ($FDFE/D2)
+115+  85A5 01 FE FB         LD BC, $FBFE
+116+  85A8 ED 78            IN A, (C)
+117+  85AA CB 57            BIT 2, A            ; E = bit D2
+118+  85AC 28 1F            JR Z, .RET_UP
+119+  85AE
+120+  85AE 01 FE FD         LD BC, $FDFE
+121+  85B1 ED 78            IN A, (C)
+122+  85B3 CB 57            BIT 2, A            ; D = bit D2
+123+  85B5 28 19            JR Z, .RET_DOWN
+124+  85B7 18 12            JR .RET_NONE
+125+  85B9
+126+  85B9              .CHECK_P3_KEYS:
+127+  85B9                  ; P3: T=Arriba ($FBFE/D4),  G=Abajo ($FDFE/D4)
+128+  85B9 01 FE FB         LD BC, $FBFE
+129+  85BC ED 78            IN A, (C)
+130+  85BE CB 67            BIT 4, A            ; T = bit D4
+131+  85C0 28 0B            JR Z, .RET_UP
+132+  85C2
+133+  85C2 01 FE FD         LD BC, $FDFE
+134+  85C5 ED 78            IN A, (C)
+135+  85C7 CB 67            BIT 4, A            ; G = bit D4
+136+  85C9 28 05            JR Z, .RET_DOWN
+137+  85CB
+138+  85CB              .RET_NONE:
+139+  85CB AF               XOR A
+140+  85CC C9               RET
+141+  85CD              .RET_UP:
+142+  85CD 3E 55            LD A, KEY_UP
+143+  85CF C9               RET
+144+  85D0              .RET_DOWN:
+145+  85D0 3E 44            LD A, KEY_DOWN
+146+  85D2 C9               RET
+147+  85D3
+148+  85D3              ; --------------------------------------------------------------------------------------------
+149+  85D3              ; KEYBOARD_POLL_CONFIRM
+150+  85D3              ; Comprueba si el jugador activo ha pulsado su tecla CONFIRMAR.
+151+  85D3              ;
+152+  85D3              ; Entrada:  (GUARDAR_JUGADOR_ACTUAL) - jugador activo (1, 2 o 3)
+153+  85D3              ; Salida:   A = KEY_CONFIRM (13) si pulsada, A = 0 si no
+154+  85D3              ; Modifica: AF, BC
+155+  85D3              ; --------------------------------------------------------------------------------------------
+156+  85D3              KEYBOARD_POLL_CONFIRM:
+157+  85D3 3A 03 81         LD A, (GUARDAR_JUGADOR_ACTUAL)
+158+  85D6 FE 02            CP PLAYER_2
+159+  85D8 28 0F            JR Z, .CONFIRM_P2
+160+  85DA FE 03            CP PLAYER_3
+161+  85DC 28 16            JR Z, .CONFIRM_P3
+162+  85DE
+163+  85DE              .CONFIRM_P1:
+164+  85DE                  ; Z = $FEFE / bit D1
+165+  85DE 01 FE FE         LD BC, $FEFE
+166+  85E1 ED 78            IN A, (C)
+167+  85E3 CB 4F            BIT 1, A
+168+  85E5 20 19            JR NZ, .NO_CONFIRM
+169+  85E7 18 14            JR .YES_CONFIRM
+170+  85E9
+171+  85E9              .CONFIRM_P2:
+172+  85E9                  ; C = $FEFE / bit D3
+173+  85E9 01 FE FE         LD BC, $FEFE
+174+  85EC ED 78            IN A, (C)
+175+  85EE CB 5F            BIT 3, A
+176+  85F0 20 0E            JR NZ, .NO_CONFIRM
+177+  85F2 18 09            JR .YES_CONFIRM
+178+  85F4
+179+  85F4              .CONFIRM_P3:
+180+  85F4                  ; B = $7FFE / bit D4
+181+  85F4 01 FE 7F         LD BC, $7FFE
+182+  85F7 ED 78            IN A, (C)
+183+  85F9 CB 67            BIT 4, A
+184+  85FB 20 03            JR NZ, .NO_CONFIRM
+185+  85FD
+186+  85FD              .YES_CONFIRM:
+187+  85FD 3E 0D            LD A, KEY_CONFIRM
+188+  85FF C9               RET
+189+  8600              .NO_CONFIRM:
+190+  8600 AF               XOR A
+191+  8601 C9               RET
+192+  8602
+193+  8602              ; --------------------------------------------------------------------------------------------
+194+  8602              ; KEYBOARD_WAIT_RELEASE_CONFIRM
+195+  8602              ; Espera a que el jugador activo suelte su tecla CONFIRMAR (debounce post-acción).
+196+  8602              ;
+197+  8602              ; Entrada:  (GUARDAR_JUGADOR_ACTUAL) - jugador activo (1, 2 o 3)
+198+  8602              ; Salida:   -
+199+  8602              ; Modifica: AF, BC
+200+  8602              ; --------------------------------------------------------------------------------------------
+201+  8602              KEYBOARD_WAIT_RELEASE_CONFIRM:
+202+  8602 F5               PUSH AF
+203+  8603 3A 03 81         LD A, (GUARDAR_JUGADOR_ACTUAL)
+204+  8606 FE 02            CP PLAYER_2
+205+  8608 28 09            JR Z, .WR_P2
+206+  860A FE 03            CP PLAYER_3
+207+  860C 28 0A            JR Z, .WR_P3
+208+  860E
+209+  860E              .WR_P1:
+210+  860E 01 FE FE         LD BC, $FEFE        ; Puerto de Z (P1 confirm)
+211+  8611 18 08            JR .DO_WAIT
+212+  8613
+213+  8613              .WR_P2:
+214+  8613 01 FE FE         LD BC, $FEFE        ; Puerto de C (P2 confirm)
+215+  8616 18 03            JR .DO_WAIT
+216+  8618
+217+  8618              .WR_P3:
+218+  8618 01 FE 7F         LD BC, $7FFE        ; Puerto de B (P3 confirm)
+219+  861B
+220+  861B              .DO_WAIT:
+221+  861B F1               POP AF
+222+  861C C3 5C 85         JP KEYBOARD_WAIT_RELEASE    ; Preserva AF ya recuperado
+223+  861F
+224+  861F              ; --------------------------------------------------------------------------------------------
+225+  861F              ; KEYBOARD_POLL_F
+226+  861F              ; Comprueba si 'F' (salir del juego) está pulsada.
+227+  861F              ;
+228+  861F              ; Entrada:  -
+229+  861F              ; Salida:   A = 'F' o 0
+230+  861F              ; Modifica: AF, BC
+231+  861F              ; --------------------------------------------------------------------------------------------
+232+  861F              KEYBOARD_POLL_F:
+233+  861F 01 FE FD         LD BC, $FDFE        ; Fila A,S,D,F,G - Bit 3 = 'F'
+234+  8622 ED 78            IN A, (C)
+235+  8624 CB 5F            BIT 3, A
+236+  8626 20 03            JR NZ, .NO_F
+237+  8628 3E 46            LD A, 'F'
+238+  862A C9               RET
+239+  862B              .NO_F:
+240+  862B AF               XOR A
+241+  862C C9               RET
+242+  862D
+243+  862D              ; ============================================================================================
+244+  862D              ; 4. BUCLE PRINCIPAL DE ENTRADA (GAME INPUT LOOP)
+245+  862D              ; ============================================================================================
+246+  862D              ; Bucle ocupado (busy-loop) sin HALT. El temporizador de 16 bits controla la velocidad
+247+  862D              ; del movimiento vertical del preview para evitar desplazamiento demasiado rápido.
+248+  862D              ;
+249+  862D              ; Flujo: inicializar -> poll teclas -> gestionar movimiento/confirmación -> redibujar -> repetir
+250+  862D
+251+  862D              KEYBOARD_ActivarInput_Keys:
+252+  862D CD 36 81         CALL INPUT_Inicializar_Teclado  ; Prepara estado inicial y dibuja preview de P1
+253+  8630
+254+  8630                  ; Sincronizar PREVIOUS_ROW con la fila inicial
+255+  8630 3A 04 81         LD A, (CURRENT_ROW)
+256+  8633 32 05 81         LD (PREVIOUS_ROW), A
+257+  8636
+258+  8636                  ; Inicializar temporizador de 16 bits a 0 (permite movimiento inmediato)
+259+  8636 21 09 81         LD HL, MOVE_COOLDOWN_TIMER
+260+  8639 AF               XOR A
+261+  863A 77               LD (HL), A
+262+  863B 23               INC HL
+263+  863C 77               LD (HL), A
+264+  863D
+265+  863D              .LOOP:
+266+  863D                  ; --- 1. GESTIÓN DEL TEMPORIZADOR DE COOLDOWN (16 bits) ---
+267+  863D 21 09 81         LD HL, MOVE_COOLDOWN_TIMER
+268+  8640 4E               LD C, (HL)
+269+  8641 23               INC HL
+270+  8642 46               LD B, (HL)
+271+  8643
+272+  8643 78               LD A, B
+273+  8644 B1               OR C
+274+  8645 28 07            JR Z, .SKIP_COOLDOWN_DEC
+275+  8647
+276+  8647 0B               DEC BC
+277+  8648 21 09 81         LD HL, MOVE_COOLDOWN_TIMER
+278+  864B 71               LD (HL), C
+279+  864C 23               INC HL
+280+  864D 70               LD (HL), B
+281+  864E
+282+  864E              .SKIP_COOLDOWN_DEC:
+283+  864E                  ; --- 2. SONDEO DE TECLAS DE MOVIMIENTO ---
+284+  864E CD 86 85         CALL KEYBOARD_POLL_PLAYER_MOVE
+285+  8651
+286+  8651 FE 55            CP KEY_UP
+287+  8653 28 16            JR Z, .HANDLE_UP_CONTINUOUS
+288+  8655 FE 44            CP KEY_DOWN
+289+  8657 28 31            JR Z, .HANDLE_DOWN_CONTINUOUS
+290+  8659
+291+  8659                  ; --- 3. SONDEO DE CONFIRMAR Y SALIR ---
+292+  8659 CD D3 85         CALL KEYBOARD_POLL_CONFIRM
+293+  865C FE 0D            CP KEY_CONFIRM
+294+  865E CA CA 86         JP Z, .HANDLE_CONFIRM_PRESS
+295+  8661
+296+  8661 CD 1F 86         CALL KEYBOARD_POLL_F
+297+  8664 FE 46            CP 'F'
+298+  8666 CA DF 86         JP Z, .HANDLE_F_PRESS
+299+  8669
+300+  8669 18 D2            JR .LOOP
+301+  866B
+302+  866B              ; --------------------------------------------------------------------------------------------
+303+  866B              ; MANEJADORES DE MOVIMIENTO VERTICAL (ARRIBA y ABAJO)
+304+  866B              ; --------------------------------------------------------------------------------------------
+305+  866B              .HANDLE_UP_CONTINUOUS:
+306+  866B                  ; Recargar temporizador (BC destruido por KEYBOARD_POLL_PLAYER_MOVE)
+307+  866B 21 09 81         LD HL, MOVE_COOLDOWN_TIMER
+308+  866E 4E               LD C, (HL)
+309+  866F 23               INC HL
+310+  8670 46               LD B, (HL)
+311+  8671
+312+  8671 78               LD A, B
+313+  8672 B1               OR C
+314+  8673 20 35            JR NZ, .CHECK_REDRAW        ; Timer activo -> no mover!!
+315+  8675
+316+  8675                  ; Timer = 0: mover si no estamos en la fila 0
+317+  8675 3A 04 81         LD A, (CURRENT_ROW)
+318+  8678 B7               OR A                        ; ¿Ya en fila 0?
+319+  8679 28 2F            JR Z, .CHECK_REDRAW
+320+  867B 3D               DEC A
+321+  867C 32 04 81         LD (CURRENT_ROW), A
+322+  867F
+323+  867F 01 DC 05         LD BC, MOVE_DELAY_FRAMES
+324+  8682 21 09 81         LD HL, MOVE_COOLDOWN_TIMER
+325+  8685 71               LD (HL), C
+326+  8686 23               INC HL
+327+  8687 70               LD (HL), B
+328+  8688
+329+  8688 18 20            JR .CHECK_REDRAW
+330+  868A
+331+  868A              .HANDLE_DOWN_CONTINUOUS:
+332+  868A 21 09 81         LD HL, MOVE_COOLDOWN_TIMER
+333+  868D 4E               LD C, (HL)
+334+  868E 23               INC HL
+335+  868F 46               LD B, (HL)
+336+  8690
+337+  8690 78               LD A, B
+338+  8691 B1               OR C
+339+  8692 20 16            JR NZ, .CHECK_REDRAW
+340+  8694
+341+  8694                  ; Timer = 0: mover si no estamos en la fila 5 (BOARD_ROWS - 1)
+342+  8694 3A 04 81         LD A, (CURRENT_ROW)
+343+  8697 FE 05            CP BOARD_ROWS - 1           ; ¿Ya en fila 5?
+344+  8699 28 0F            JR Z, .CHECK_REDRAW
+345+  869B 3C               INC A
+346+  869C 32 04 81         LD (CURRENT_ROW), A
+347+  869F
+348+  869F 01 DC 05         LD BC, MOVE_DELAY_FRAMES
+349+  86A2 21 09 81         LD HL, MOVE_COOLDOWN_TIMER
+350+  86A5 71               LD (HL), C
+351+  86A6 23               INC HL
+352+  86A7 70               LD (HL), B
+353+  86A8
+354+  86A8 18 00            JR .CHECK_REDRAW
+355+  86AA
+356+  86AA              ; --------------------------------------------------------------------------------------------
+357+  86AA              ; RUTINA DE REDIBUJADO - Previene parpadeo comparando fila actual con la anterior
+358+  86AA              ; --------------------------------------------------------------------------------------------
+359+  86AA              .CHECK_REDRAW:
+360+  86AA 3A 04 81         LD A, (CURRENT_ROW)         ; A = fila nueva
+361+  86AD 47               LD B, A
+362+  86AE 3A 05 81         LD A, (PREVIOUS_ROW)        ; A = fila antigua
+363+  86B1 B8               CP B
+364+  86B2 28 89            JR Z, .LOOP                 ; Sin cambio, no redibujar
+365+  86B4
+366+  86B4                  ; 1. Borrar preview en la posición ANTIGUA
+367+  86B4 3A 05 81         LD A, (PREVIOUS_ROW)
+368+  86B7 32 04 81         LD (CURRENT_ROW), A         ; Temporalmente apuntamos a la fila antigua
+369+  86BA CD 76 81         CALL ERASE_PREVIEW
+370+  86BD
+371+  86BD                  ; 2. Dibujar preview en la posición NUEVA
+372+  86BD 78               LD A, B
+373+  86BE 32 04 81         LD (CURRENT_ROW), A
+374+  86C1 CD 51 81         CALL DIBUJAR_FICHA_JUGADOR
+375+  86C4
+376+  86C4                  ; 3. Sincronizar PREVIOUS_ROW
+377+  86C4 32 05 81         LD (PREVIOUS_ROW), A
+378+  86C7 C3 3D 86         JP .LOOP
+379+  86CA
+380+  86CA              ; --------------------------------------------------------------------------------------------
+381+  86CA              ; MANEJADORES DE ACCIÓN (CONFIRMAR y F)
+382+  86CA              ; Una sola acción por pulsación gracias a KEYBOARD_WAIT_RELEASE_CONFIRM.
+383+  86CA              ; --------------------------------------------------------------------------------------------
+384+  86CA              .HANDLE_CONFIRM_PRESS:
+385+  86CA CD 02 86         CALL KEYBOARD_WAIT_RELEASE_CONFIRM  ; Esperar a que el jugador suelte su tecla CONFIRM
+386+  86CD CD 76 81         CALL ERASE_PREVIEW
+387+  86D0 CD BB 81         CALL COLOCAR_FICHA_EN_TABLERO       ; Lógica completa del turno (puede JP a GAME_End)
+388+  86D3
+389+  86D3                  ; Si el juego continúa, retorna aquí
+390+  86D3 CD 51 81         CALL DIBUJAR_FICHA_JUGADOR          ; Preview del siguiente jugador
+391+  86D6 3A 04 81         LD A, (CURRENT_ROW)
+392+  86D9 32 05 81         LD (PREVIOUS_ROW), A                ; Sincronizar
+393+  86DC C3 3D 86         JP .LOOP
+394+  86DF
+395+  86DF              .HANDLE_F_PRESS:
+396+  86DF 01 FE FD         LD BC, $FDFE
+397+  86E2 CD 5C 85         CALL KEYBOARD_WAIT_RELEASE
+398+  86E5 C3 69 82         JP GAME_End
+399+  86E8
+# file closed: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\io/keyboard.asm
+ 50   86E8                  INCLUDE "io/printat.asm"
+# file opened: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\io/printat.asm
+  1+  86E8              ; -------------------------------
+  2+  86E8              ; ZX Spectrum Text print library
+  3+  86E8              ; Daniel León - AOC - UFV 2020
+  4+  86E8              ; -------------------------------
+  5+  86E8
+  6+  86E8
+  7+  86E8              ; ----------------------------------------------------------------------------------------
+  8+  86E8              ; PRINTAT - Print a string in a position and attributes as per registers:
+  9+  86E8              ;		IN	A	: Bit 7=1 For Flash / Bit 6=1 For Brigh / Bit 5,4,3 for Paper / Bit 2,1,0 for Ink
+ 10+  86E8              ;		IN	B	: Row 0..23
+ 11+  86E8              ;		IN	C	: Column 0..31
+ 12+  86E8              ;		IN	IX	: Address of text (Text must end in a 0)
+ 13+  86E8              ; ----------------------------------------------------------------------------------------
+ 14+  86E8 CD F7 86     PRINTAT:	CALL PREP_PRT				; Update Attribute var &Screen & Attributes pointers
+ 15+  86EB              ; ----------------------------------------------------------------------------------------
+ 16+  86EB              ;		VVV Do not move PRINTSTR below as PRINTAT continues into PRINTSTR routine
+ 17+  86EB              ; ----------------------------------------------------------------------------------------
+ 18+  86EB              ; PRINTSTR - Prints String - IX Points to the String start
+ 19+  86EB              ; ----------------------------------------------------------------------------------------
+ 20+  86EB DD 7E 00     PRINTSTR:   LD A,(IX)					; A Contains first char to print
+ 21+  86EE B7           			OR A						; check for end of string (0)
+ 22+  86EF C8           			RET Z						; Finish printing if 0
+ 23+  86F0 CD 25 87     			CALL PRINTCHNUM
+ 24+  86F3 DD 23        			INC IX						; Move to next char in string
+ 25+  86F5 18 F4        			JR PRINTSTR					; Start over printing sequence
+ 26+  86F7              ; ----------------------------------------------------------------------------------------
+ 27+  86F7
+ 28+  86F7
+ 29+  86F7              ;-----------------------------------------------------------------------------------------
+ 30+  86F7              ; PREP_PRT - Updates Print_Attr, SCR & ATTR Vars
+ 31+  86F7              ;-----------------------------------------------------------------------------------------
+ 32+  86F7 32 6B 87     PREP_PRT:	LD (PRINT_ATTR),A			; Set Attribute
+ 33+  86FA CD 00 87     PREP_PRT_2:	CALL CRtoSCREEN
+ 34+  86FD C3 12 87     			JP CRtoATTR
+ 35+  8700              ;-----------------------------------------------------------------------------------------
+ 36+  8700
+ 37+  8700              ;-----------------------------------------------------------------------------------------
+ 38+  8700              ; CRtoSCREEN - Converts a scr char coord into a SCREEN Address   b,c = y,x positions
+ 39+  8700              ;	IN  - B=Row, C=Column
+ 40+  8700              ;	OUT - HL=Address in screen also stored in (SCR_CUR_PTR)
+ 41+  8700              ;	Conversion:
+ 42+  8700              ;			Row FFfff   Column CCCCC
+ 43+  8700              ;			HL=%010FF000 fffCCCCC
+ 44+  8700              ;-----------------------------------------------------------------------------------------
+ 45+  8700              CRtoSCREEN:
+ 46+  8700 78           			LD A,B						; %___FFfff
+ 47+  8701 F6 40        			OR #40						; %010FFfff
+ 48+  8703 E6 F8        			AND #F8						; %010FF000
+ 49+  8705 67           			LD H,A
+ 50+  8706
+ 51+  8706 78           			LD A,B						; %___FFfff
+ 52+  8707 E6 07        			AND #7						; %00000fff
+ 53+  8709 0F           			RRCA						; %f00000ff
+ 54+  870A 0F           			RRCA						; %ff00000f
+ 55+  870B 0F           			RRCA						; %fff00000
+ 56+  870C B1           			OR C						; %fffCCCCC
+ 57+  870D 6F           			LD L,A
+ 58+  870E 22 67 87                 LD (SCR_CUR_PTR),HL			; Update Variable
+ 59+  8711 C9                       RET
+ 60+  8712              ; ----------------------------------------------------------------------------------------
+ 61+  8712
+ 62+  8712
+ 63+  8712
+ 64+  8712              ;-----------------------------------------------------------------------------------------
+ 65+  8712              ; CRtoATTR - Converts a screen char coord  into a ATTR Address  b,c = y,x positions
+ 66+  8712              ;	IN  - B=Row, C=Column
+ 67+  8712              ;	OUT - HL=Address in screen also stored in (SCR_ATTR_PTR)
+ 68+  8712              ;	Conversion:
+ 69+  8712              ;			Row FFfff   Column CCCCC
+ 70+  8712              ;			HL=%010110FF fffCCCCC
+ 71+  8712              ;-----------------------------------------------------------------------------------------
+ 72+  8712              CRtoATTR:
+ 73+  8712 78           			LD A,B						; %___FFfff
+ 74+  8713 0F           			RRCA						; %f000FFff
+ 75+  8714 0F           			RRCA						; %ff000FFf
+ 76+  8715 0F           			RRCA						; %fff000FF
+ 77+  8716 6F           			LD L,A
+ 78+  8717 E6 03        			AND 3						; %000000FF	value of FF can be only 00,01,10
+ 79+  8719 F6 58        			OR #58						; %010110FF value will be #58, #59 or #5A
+ 80+  871B 67           			LD H,A
+ 81+  871C
+ 82+  871C 7D           			LD A,L						; %fff000FF
+ 83+  871D E6 E0        			AND #E0						; %fff00000
+ 84+  871F B1           			OR C						; %fffCCCCC
+ 85+  8720 6F           			LD L,A
+ 86+  8721
+ 87+  8721 22 69 87                 LD (SCR_ATTR_PTR),HL		; Update Variable
+ 88+  8724 C9                       RET
+ 89+  8725              ; ----------------------------------------------------------------------------------------
+ 90+  8725
+ 91+  8725
+ 92+  8725
+ 93+  8725              ; ----------------------------------------------------------------------------------------
+ 94+  8725              ; PRINTCHNUM - Prints Char Number N (stored in A)
+ 95+  8725              ;-----------------------------------------------------------------------------------------
+ 96+  8725              PRINTCHNUM:	;SUB 32						; Adjust Ascii to charset
+ 97+  8725 26 00        			LD H,0						; Multiply value by 8 to get to right Char in Charset
+ 98+  8727 6F           			LD L,A
+ 99+  8728 29           			ADD HL,HL
+100+  8729 29           			ADD HL,HL
+101+  872A 29           			ADD HL,HL
+102+  872B 11 6C 86     			LD DE, CHARSET-(8*32)		; Optimize in compile time (instead of sub 32)
+103+  872E 19           			ADD HL,DE
+104+  872F EB           			EX  DE,HL					;Value in DE
+105+  8730              			; Continues to printchar below
+106+  8730              ; ----------------------------------------------------------------------------------------
+107+  8730
+108+  8730
+109+  8730              ; ----------------------------------------------------------------------------------------
+110+  8730              ; PRINTCHAR - Prints Char  (DE points to the char. Uses HL as last Cur Pointer)
+111+  8730              ; ----------------------------------------------------------------------------------------
+112+  8730              PRINTCHAR:
+113+  8730 06 08        			LD B,8						; 8 Lines per char
+114+  8732 2A 67 87                 LD HL, (SCR_CUR_PTR)		; Load Cursor Pointer y,x
+115+  8735
+116+  8735 1A           BYTEPCHAR:	LD A,(DE)					; Get Char to be printed, first line
+117+  8736 77           			LD (HL),A					; Move to Printing location
+118+  8737 24                       INC H						; inc H so next line in char (ZX Spectrum Screen RAM)
+119+  8738 13                       INC DE 						; next line to be printed
+120+  8739 10 FA                    DJNZ BYTEPCHAR				; Repeat 8 lines
+121+  873B 3A 6B 87                 LD A,(PRINT_ATTR) 			; Load Attributes to print char with
+122+  873E 2A 69 87                 LD HL, (SCR_ATTR_PTR)
+123+  8741 77                       LD (HL),A
+124+  8742 21 69 87                 LD HL, SCR_ATTR_PTR			; Get pointer to ATTR
+125+  8745 34                       INC (HL)					; Move Attribute cursor to next char
+126+  8746 21 67 87     			LD HL, SCR_CUR_PTR
+127+  8749 34           			INC (HL)					; update Cursor pointer to next position
+128+  874A C9                       RET
+129+  874B              ; ----------------------------------------------------------------------------------------
+130+  874B
+131+  874B
+132+  874B
+133+  874B              ; ----------------------------------------------------------------------------------------
+134+  874B              ; INK2PAPER - moves ink of attribute stored in (PRINT_ATTR) to paper and sets ink to 0
+135+  874B              ; 				Sets bright 1 and flash 0
+136+  874B              ; ----------------------------------------------------------------------------------------
+137+  874B 3A 6B 87     INK2PAPER:	LD A, (PRINT_ATTR)		    ; Get storedAttribute
+138+  874E E6 07                    AND 7						; get Attr INK in A
+139+  8750 07           			RLCA
+140+  8751 07           			RLCA
+141+  8752 07           			RLCA						; move Ink to Paper
+142+  8753 F6 40        			OR 64						; ink 0 bright 1
+143+  8755 32 6B 87     			LD (PRINT_ATTR),A		    ; Get storedAttribute
+144+  8758 C9           			RET
+145+  8759              ; ----------------------------------------------------------------------------------------
+146+  8759
+147+  8759
+148+  8759
+149+  8759
+150+  8759 21 00 40     CLEARSCR:	LD HL,$4000					; Erases screen by writing 0 to all pixels and attributes
+151+  875C 11 01 40     			LD DE,$4001
+152+  875F 01 FF 1A     			LD BC,6911
+153+  8762 36 00        			LD (HL),0
+154+  8764 ED B0        			LDIR
+155+  8766 C9           			RET
+156+  8767
+157+  8767
+158+  8767              SCR_CUR_PTR
+158+  8767 00 00          	db $00, $00				; Cursor Pointer in Screen (2 bytes) (HL)
+159+  8769 00 00        SCR_ATTR_PTR: 	db $00, $00				; Attr Pointer in Screen (2 bytes) (HL)
+160+  876B 00           PRINT_ATTR:		db $00					; Attribute used by printchar routine (1 byte)
+161+  876C
+162+  876C              CHARSET: incbin "charset.bin"			; Charset used
+163+  8A6C
+# file closed: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\io/printat.asm
+ 51   8A6C
+ 52   8A6C              ; ----------------------------------------------
+ 53   8A6C              ; 5. Pantallas (Flujo del programa)
+ 54   8A6C              ; ----------------------------------------------
+ 55   8A6C                  INCLUDE "screens/common.asm"
+# file opened: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\screens/common.asm
+  1+  8A6C              ; ============================================================================================
+  2+  8A6C              ; ARCHIVO: common.asm
+  3+  8A6C              ; USO: Lógica reutilizable para rutinas comunes del programa.
+  4+  8A6C              ;      Incluye inicialización de pantalla, diálogos de confirmación (S/N)
+  5+  8A6C              ;      y la pantalla de salida del juego.
+  6+  8A6C              ; ============================================================================================
+  7+  8A6C
+  8+  8A6C              ; --------------------------------------------------------------------------------------------
+  9+  8A6C              ; COMMON_INIT_SCREEN
+ 10+  8A6C              ; Limpia la pantalla completa, pone el borde negro y establece los atributos
+ 11+  8A6C              ; de color por defecto (llamando a la rutina de borde blanco).
+ 12+  8A6C              ; --------------------------------------------------------------------------------------------
+ 13+  8A6C              COMMON_INIT_SCREEN:
+ 14+  8A6C AF               XOR A                       ; A = 0
+ 15+  8A6D D3 FE            OUT ($FE), A                ; Establece el color del borde a 0 (Negro)
+ 16+  8A6F CD 59 87         CALL CLEARSCR               ; Llama a la ROM para borrar el área de píxeles y atributos
+ 17+  8A72 CD 57 85         CALL COLOR_BORDE_PANTALLA   ; Restablece el borde (posiblemente a blanco, según la rutina)
+ 18+  8A75 C9               RET
+ 19+  8A76
+ 20+  8A76              ; --------------------------------------------------------------------------------------------
+ 21+  8A76              ; COMMON_HANDLE_PLAY_RESPONSE
+ 22+  8A76              ; Gestiona la navegación estándar después de una pregunta de "Jugar".
+ 23+  8A76              ; Esta rutina NO RETORNA. Transfiere el control (JP) a otra pantalla.
+ 24+  8A76              ;
+ 25+  8A76              ; ENTRADA:
+ 26+  8A76              ;   IX = Puntero al mensaje de título (para COMMON_SHOW_CONFIRM_SCREEN)
+ 27+  8A76              ;   IY = Puntero a la pregunta (para COMMON_SHOW_CONFIRM_SCREEN)
+ 28+  8A76              ; --------------------------------------------------------------------------------------------
+ 29+  8A76              COMMON_HANDLE_PLAY_RESPONSE:
+ 30+  8A76                  ; 1. Mostrar la pantalla de confirmación
+ 31+  8A76 CD 81 8A         CALL COMMON_SHOW_CONFIRM_SCREEN ; Espera una respuesta S/N
+ 32+  8A79                                                  ; Retorna A=1 (Sí) o A=0 (No)
+ 33+  8A79
+ 34+  8A79                  ; 2. Evaluar la respuesta
+ 35+  8A79 FE 01            CP 1                            ; Compara A con 1 (Sí)
+ 36+  8A7B
+ 37+  8A7B                  ; 3. Saltar a la pantalla correspondiente
+ 38+  8A7B CA 04 8B         JP Z, GAME_SCREEN               ; Si A=1 (Z=1), saltar a la pantalla de juego
+ 39+  8A7E C3 D5 8A         JP COMMON_MESSAGE_BYE_SCREEN    ; Si A=0 (Z=0), saltar a la pantalla de despedida
+ 40+  8A81
+ 41+  8A81              ; --------------------------------------------------------------------------------------------
+ 42+  8A81              ; COMMON_SHOW_CONFIRM_SCREEN
+ 43+  8A81              ; Muestra una interfaz estandarizada de pregunta S/N en la parte inferior
+ 44+  8A81              ; de la pantalla y espera la entrada del usuario.
+ 45+  8A81              ;
+ 46+  8A81              ; ENTRADA:
+ 47+  8A81              ;   IX = Dirección del mensaje de título (arriba). Si es 0, se omite.
+ 48+  8A81              ;   IY = Dirección de la pregunta (abajo, ej: "¿Quieres jugar?").
+ 49+  8A81              ;
+ 50+  8A81              ; SALIDA:
+ 51+  8A81              ;   A = 1 (si el usuario pulsó 'S')
+ 52+  8A81              ;   A = 0 (si el usuario pulsó 'N')
+ 53+  8A81              ; --------------------------------------------------------------------------------------------
+ 54+  8A81              COMMON_SHOW_CONFIRM_SCREEN:
+ 55+  8A81                  ; 1. Mostrar Título Superior (si existe)
+ 56+  8A81 DD 7E 00         LD A, (IX)                  ; Carga el primer byte del puntero IX
+ 57+  8A84 B7               OR A                        ; Comprueba si A es 0 (cadena vacía)
+ 58+  8A85 28 09            JR Z, .SKIP_TITLE           ; Si es 0, omitir el dibujo del título
+ 59+  8A87
+ 60+  8A87 3E 46            LD A, COLOR_AMARILLO_NEGRO  ; Atributo para el título
+ 61+  8A89 06 01            LD B, 1                     ; Fila 1
+ 62+  8A8B 0E 07            LD C, 7                     ; Columna 7
+ 63+  8A8D CD E8 86         CALL PRINTAT                ; (IX ya está cargado con el título)
+ 64+  8A90
+ 65+  8A90              .SKIP_TITLE:
+ 66+  8A90                  ; 2. Mostrar Pregunta Inferior (ej: "Quieres jugar?")
+ 67+  8A90 3E FA            LD A, COLOR_ROJO_BLANCO_FLASH ; Atributo parpadeante
+ 68+  8A92 06 14            LD B, 20                    ; Fila 20
+ 69+  8A94 0E 04            LD C, 4                     ; Columna 4
+ 70+  8A96 DD E5            PUSH IX                     ; Salvar IX (título) temporalmente
+ 71+  8A98 FD E5 DD E1      LD IX, IY                   ; Cargar IX con la pregunta (IY)
+ 72+  8A9C CD E8 86         CALL PRINTAT
+ 73+  8A9F DD E1            POP IX                      ; Restaurar IX
+ 74+  8AA1
+ 75+  8AA1                  ; 3. Mostrar prompt "(S / N):" al lado de la pregunta
+ 76+  8AA1 3E FA            LD A, COLOR_ROJO_BLANCO_FLASH ; Mismo atributo
+ 77+  8AA3 06 14            LD B, 20                      ; Misma fila 20
+ 78+  8AA5 0E 14            LD C, 20                      ; Columna 20 (más a la derecha)
+ 79+  8AA7 DD E5            PUSH IX
+ 80+  8AA9 DD 21 5E 80      LD IX, CONFIRMATION_MESSAGE_SN ; Puntero al texto "(S / N):"
+ 81+  8AAD CD E8 86         CALL PRINTAT
+ 82+  8AB0 DD E1            POP IX
+ 83+  8AB2
+ 84+  8AB2                  ; 4. Leer respuesta del usuario (Bloqueante)
+ 85+  8AB2 CD 65 85         CALL KEYBOARD_LEER_SN       ; Espera hasta que se pulse 'S' o 'N'
+ 86+  8AB5 32 01 81         LD (MESSAGE_KEY_SN), A      ; Guarda el carácter ('S' o 'N') en una variable
+ 87+  8AB8
+ 88+  8AB8                  ; 5. Mostrar la tecla pulsada (Eco visual)
+ 89+  8AB8 3E FA            LD A, COLOR_ROJO_BLANCO_FLASH ; Mismo atributo
+ 90+  8ABA 06 14            LD B, 20
+ 91+  8ABC 0E 1C            LD C, 28
+ 92+  8ABE DD E5            PUSH IX
+ 93+  8AC0 DD 21 01 81      LD IX, MESSAGE_KEY_SN       ; Puntero a la variable que contiene la tecla
+ 94+  8AC4 CD E8 86         CALL PRINTAT
+ 95+  8AC7 DD E1            POP IX
+ 96+  8AC9
+ 97+  8AC9                  ; 6. Evaluar y preparar el valor de retorno
+ 98+  8AC9 3A 01 81         LD A, (MESSAGE_KEY_SN)
+ 99+  8ACC FE 53            CP 'S'                      ; ¿Pulsó 'S'?
+100+  8ACE 28 02            JR Z, .RETURN_YES
+101+  8AD0
+102+  8AD0                  ; Si no fue 'S', fue 'N'
+103+  8AD0 AF               XOR A                       ; A = 0 (No)
+104+  8AD1 C9               RET
+105+  8AD2              .RETURN_YES:
+106+  8AD2 3E 01            LD A, 1                     ; A = 1 (Sí)
+107+  8AD4 C9               RET
+108+  8AD5
+109+  8AD5              ; --------------------------------------------------------------------------------------------
+110+  8AD5              ; COMMON_MESSAGE_BYE_SCREEN
+111+  8AD5              ; Muestra la pantalla de despedida y detiene la ejecución del programa.
+112+  8AD5              ; --------------------------------------------------------------------------------------------
+113+  8AD5              COMMON_MESSAGE_BYE_SCREEN:
+114+  8AD5 CD 6C 8A         CALL COMMON_INIT_SCREEN     ; Limpiar la pantalla
+115+  8AD8
+116+  8AD8                  ; Mostrar mensaje "Hasta pronto!"
+117+  8AD8 3E FA            LD A, COLOR_ROJO_BLANCO_FLASH
+118+  8ADA 06 0A            LD B, 10                    ; Fila 10
+119+  8ADC 0E 0A            LD C, 10                    ; Columna 10
+120+  8ADE DD 21 68 80      LD IX, BYE_MESSAGE          ; Puntero al texto de despedida
+121+  8AE2 CD E8 86         CALL PRINTAT
+122+  8AE5
+123+  8AE5 76               HALT                        ; Detiene la CPU. Fin del programa.
+# file closed: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\screens/common.asm
+ 56   8AE6                  INCLUDE "screens/StartScreen.asm"
+# file opened: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\screens/StartScreen.asm
+  1+  8AE6              ; ============================================================================================
+  2+  8AE6              ; ARCHIVO: StartScreen.asm
+  3+  8AE6              ; USO: Pantalla de bienvenida principal y punto de entrada del programa.
+  4+  8AE6              ;      Muestra el título, el gráfico de portada y pregunta al usuario si desea jugar.
+  5+  8AE6              ; ============================================================================================
+  6+  8AE6
+  7+  8AE6              START_SCREEN:
+  8+  8AE6                  ; 1. Inicialización
+  9+  8AE6                  ; Llama a la rutina común para limpiar la pantalla, poner el borde negro
+ 10+  8AE6                  ; y establecer los atributos de color por defecto.
+ 11+  8AE6 CD 6C 8A         CALL COMMON_INIT_SCREEN
+ 12+  8AE9
+ 13+  8AE9                  ; --- 2. Dibujar Título "Bienvenido al Conecta 3" ---
+ 14+  8AE9 3E 46            LD A, COLOR_AMARILLO_NEGRO  ; Atributo: Amarillo brillante sobre negro
+ 15+  8AEB 06 01            LD B, 1                     ; Fila (Y) = 1
+ 16+  8AED 0E 05            LD C, 5                     ; Columna (X) = 5
+ 17+  8AEF DD 21 12 80      LD IX, WELCOME_MESSAGE      ; Puntero al texto a imprimir
+ 18+  8AF3 CD E8 86         CALL PRINTAT
+ 19+  8AF6
+ 20+  8AF6                  ; --- 3. Dibujar Gráfico de Portada ---
+ 21+  8AF6                  ; Llama a la rutina en portada.asm para dibujar el "C4" animado.
+ 22+  8AF6 CD 9F 83         CALL PORTADA_DibujarPortada
+ 23+  8AF9
+ 24+  8AF9                  ; --- 4. Preguntar "¿Quieres jugar?" ---
+ 25+  8AF9                  ; Carga los punteros para la rutina de confirmación S/N (COMMON_SHOW_CONFIRM_SCREEN).
+ 26+  8AF9 DD 21 76 80      LD IX, EMPTY_MESSAGE            ; IX = Puntero al título superior (ninguno)
+ 27+  8AFD FD 21 2A 80      LD IY, PLAY_MESSAGE_1           ; IY = Puntero a la pregunta inferior
+ 28+  8B01
+ 29+  8B01                  ; Esta rutina NO retornará aquí; saltará directamente a:
+ 30+  8B01                  ;   - GAME_SCREEN (si pulsa 'S')
+ 31+  8B01                  ;   - COMMON_MESSAGE_BYE_SCREEN (si pulsa 'N')
+ 32+  8B01 C3 76 8A         JP COMMON_HANDLE_PLAY_RESPONSE
+# file closed: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\screens/StartScreen.asm
+ 57   8B04                  INCLUDE "screens/GameScreen.asm"
+# file opened: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\screens/GameScreen.asm
+  1+  8B04              ; ============================================================================================
+  2+  8B04              ; ARCHIVO: GameScreen.asm
+  3+  8B04              ; USO: Prepara e inicia una nueva partida.
+  4+  8B04              ;      Limpia la pantalla, reinicia el tablero lógico (array de memoria),
+  5+  8B04              ;      dibuja el tablero gráfico y cede el control al bucle de juego.
+  6+  8B04              ; ============================================================================================
+  7+  8B04
+  8+  8B04              GAME_SCREEN:
+  9+  8B04                  ; 1. Inicialización de la pantalla
+ 10+  8B04 CD 6C 8A         CALL COMMON_INIT_SCREEN
+ 11+  8B07
+ 12+  8B07                  ; --- 2. Reinicio del Tablero Lógico (BOARD_ARRAY) ---
+ 13+  8B07                  ; Pone a 0 (EMPTY_CELL) las 42 celdas del tablero en la memoria RAM.
+ 14+  8B07 21 0C 81         LD HL, BOARD_ARRAY          ; HL = Dirección de inicio del tablero
+ 15+  8B0A 06 2A            LD B, 42                    ; B = Contador (42 bytes/celdas)
+ 16+  8B0C AF               XOR A                       ; A = 0 (valor para celda vacía)
+ 17+  8B0D              .RESET_MEMORY_LOOP:
+ 18+  8B0D 77               LD (HL), A                  ; Escribir 0 en la celda
+ 19+  8B0E 23               INC HL                      ; Siguiente dirección de memoria
+ 20+  8B0F 10 FC            DJNZ .RESET_MEMORY_LOOP     ; Repetir 42 veces
+ 21+  8B11
+ 22+  8B11                  ; --- 3. Reinicio de Variables de Estado de la Partida ---
+ 23+  8B11 3E 01            LD A, PLAYER_1
+ 24+  8B13 32 03 81         LD (GUARDAR_JUGADOR_ACTUAL), A ; El Jugador 1 siempre empieza
+ 25+  8B16
+ 26+  8B16 AF               XOR A
+ 27+  8B17 32 04 81         LD (CURRENT_ROW), A         ; Ficha flotante empieza en fila 0 (INPUT_Inicializar_Teclado la reseteará también)
+ 28+  8B1A
+ 29+  8B1A                  ; --- 4. Dibujado inicial y Ceder Control ---
+ 30+  8B1A                  ; Dibuja el tablero azul vacío con los 42 huecos negros.
+ 31+  8B1A CD 75 84         CALL TABLERO_DibujarTableroCompleto
+ 32+  8B1D
+ 33+  8B1D                  ; Esta rutina (GAME_SCREEN) no se ejecutará más hasta que se inicie
+ 34+  8B1D                  ; una nueva partida desde la pantalla final.
+ 35+  8B1D C3 2D 86         JP KEYBOARD_ActivarInput_Keys
+# file closed: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\screens/GameScreen.asm
+ 58   8B20                  INCLUDE "screens/EndScreen.asm"
+# file opened: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\screens/EndScreen.asm
+  1+  8B20              ; ============================================================================================
+  2+  8B20              ; ARCHIVO: EndScreen.asm
+  3+  8B20              ; USO: Pantalla de fin de juego (Conecta 3).
+  4+  8B20              ;      Se llama desde input.asm (GAME_End).
+  5+  8B20              ;      Muestra el resultado (quién ganó o si fue empate) y pregunta si se desea
+  6+  8B20              ;      jugar de nuevo.
+  7+  8B20              ;
+  8+  8B20              ;      El color del texto del ganador se obtiene dinámicamente de PLAYER_COLORS,
+  9+  8B20              ;      por lo que cambia automáticamente si se modifican los EQU de color en constants.asm.
+ 10+  8B20              ; ============================================================================================
+ 11+  8B20
+ 12+  8B20              END_SCREEN:
+ 13+  8B20                  ; 1. Inicialización de la pantalla
+ 14+  8B20 CD 6C 8A         CALL COMMON_INIT_SCREEN
+ 15+  8B23
+ 16+  8B23                  ; --- 2. MOSTRAR TÍTULO: "Se acabó el juego!" ---
+ 17+  8B23 3E FA            LD A, COLOR_ROJO_BLANCO_FLASH
+ 18+  8B25 06 01            LD B, 1
+ 19+  8B27 0E 07            LD C, 7
+ 20+  8B29 DD 21 3A 80      LD IX, GAME_OVER_MESSAGE
+ 21+  8B2D CD E8 86         CALL PRINTAT
+ 22+  8B30
+ 23+  8B30                  ; --- 3. MOSTRAR RESULTADO (Ganador o Empate) ---
+ 24+  8B30                  ; GAME_OVER_REASON: 0 = Empate, 1 = Gana P1, 2 = Gana P2, 3 = Gana P3
+ 25+  8B30 3A 0B 81         LD A, (GAME_OVER_REASON)
+ 26+  8B33 B7               OR A
+ 27+  8B34 28 1B            JR Z, .PRINT_EMPATE         ; A = 0 -> Empate
+ 28+  8B36
+ 29+  8B36                  ; --- CASO GANADOR (A = 1, 2 o 3) ---
+ 30+  8B36                  ; 3a. Insertar número de jugador en WINNER_MESSAGE (posición 11 = 'X')
+ 31+  8B36 C6 30            ADD A, '0'                  ; Convierte 1/2/3 a '1'/'2'/'3' (ASCII)
+ 32+  8B38 32 82 80         LD (WINNER_MESSAGE + 11), A
+ 33+  8B3B
+ 34+  8B3B                  ; 3b. Obtener el atributo de color del ganador desde PLAYER_COLORS
+ 35+  8B3B                  ;     índice = GAME_OVER_REASON - 1  (0=P1, 1=P2, 2=P3)
+ 36+  8B3B                  ;     El color cambia automáticamente si se modifica COLOR_JUGADOR_x en constants.asm
+ 37+  8B3B 3A 0B 81         LD A, (GAME_OVER_REASON)
+ 38+  8B3E 3D               DEC A                       ; 1->0, 2->1, 3->2
+ 39+  8B3F 4F               LD C, A
+ 40+  8B40 06 00            LD B, 0
+ 41+  8B42 21 0C 80         LD HL, PLAYER_COLORS
+ 42+  8B45 09               ADD HL, BC
+ 43+  8B46 7E               LD A, (HL)                  ; A = atributo completo del jugador ganador
+ 44+  8B47
+ 45+  8B47 06 0A            LD B, 10
+ 46+  8B49 0E 04            LD C, 4
+ 47+  8B4B DD 21 77 80      LD IX, WINNER_MESSAGE
+ 48+  8B4F 18 0C            JR .DO_PRINT_RESULT
+ 49+  8B51
+ 50+  8B51              .PRINT_EMPATE:
+ 51+  8B51 3E 05            LD A, COLOR_INK_CIAN
+ 52+  8B53 F6 40            OR 64                       ; Cian brillante
+ 53+  8B55 06 0A            LD B, 10
+ 54+  8B57 0E 04            LD C, 4
+ 55+  8B59 DD 21 8F 80      LD IX, EMPATE_MESSAGE
+ 56+  8B5D
+ 57+  8B5D              .DO_PRINT_RESULT:
+ 58+  8B5D CD E8 86         CALL PRINTAT
+ 59+  8B60
+ 60+  8B60                  ; --- 4. PREGUNTAR "¿Volver a jugar?" ---
+ 61+  8B60 DD 21 76 80      LD IX, EMPTY_MESSAGE
+ 62+  8B64 FD 21 4D 80      LD IY, PLAY_AGAIN_MESSAGE_1
+ 63+  8B68 C3 76 8A         JP COMMON_HANDLE_PLAY_RESPONSE
+ 64+  8B6B
+# file closed: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\screens/EndScreen.asm
+ 59   8B6B
+# file closed: C:\Users\VICTOR\code\UFV\AOC\AOC_ENTREGA_V2_CONECTA_CUATRO\src\ConnectFour.asm
